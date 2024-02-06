@@ -5,12 +5,35 @@ from msal import ConfidentialClientApplication, TokenCache
 from typing import List
 import aiohttp, base64, logging, os, uuid
 
+# Ensure environment variables are loaded, for example, from a .env file
 if not os.environ.get("CLIENT_ID"):
     from dotenv import load_dotenv
+
     load_dotenv()
 
+
 class MicrosoftGraphHandler(AllowAnyLOGIN):
+    """
+    An SMTP handler class that processes emails and sends them through the Microsoft Graph API.
+
+    This class is responsible for parsing incoming SMTP email data, extracting content and attachments,
+    and sending the email using the Microsoft Graph API with the configured application credentials.
+
+    Attributes
+    ----------
+    app : ConfidentialClientApplication
+        An MSAL Confidential Client Application instance used to acquire tokens for Graph API requests.
+
+    Methods
+    -------
+    handle_DATA(server: SMTP, session: Session, envelope: Envelope) -> str:
+        Processes the incoming SMTP data and sends the email via Microsoft Graph API.
+    """
+
     def __init__(self):
+        """
+        Initializes the handler with a Confidential Client Application for Microsoft authentication.
+        """
         self.app = ConfidentialClientApplication(
             client_id=os.environ["CLIENT_ID"],
             client_credential=os.environ["CLIENT_SECRET"],
@@ -18,17 +41,38 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
             token_cache=TokenCache(),
         )
 
-    async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope):
+    async def handle_DATA(
+        self, server: SMTP, session: Session, envelope: Envelope
+    ) -> str:
+        """
+        Handles the SMTP DATA command, parses email content and attachments,
+        and sends the email through Microsoft Graph API.
+
+        Parameters
+        ----------
+        server : SMTP
+            The SMTP server instance.
+        session : Session
+            The SMTP session.
+        envelope : Envelope
+            The SMTP envelope, containing sender and recipient information and the email content.
+
+        Returns
+        -------
+        str
+            A response string indicating the result of the operation, typically "250 Message accepted for delivery" upon success.
+        """
         email = Parser().parsestr(envelope.content.decode("utf-8"))
         attachments = []
-        body_content = "" # Default body content
-        content_type = "text"  # Default content type
-        
+        body_content = ""  # Default body content initialization
+        content_type = "text"  # Default content type initialization
+
+        # Debugging: Save the email content to a file if LOG_LEVEL is set to DEBUG
         if os.environ.get("LOG_LEVEL", "") == "DEBUG":
             with open(f"/usr/src/app/debug/{uuid.uuid4().hex}.html", "wb") as f:
                 f.write(envelope.content)
 
-        # Process multipart emails to extract body and attachments
+        # Process email content and attachments
         if email.is_multipart():
             for part in email.walk():
                 if part.get_content_maintype() == "multipart":
@@ -57,7 +101,11 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                         attachment["isInline"] = True
                         # Optionally, set a content ID or use the filename as a reference in the HTML
                         # Note: Graph API does not directly use Content-ID like traditional email systems
-                        attachment["contentId"] = part.get('Content-ID', '').strip('<>').replace('@mydomain.com', '')
+                        attachment["contentId"] = (
+                            part.get("Content-ID", "")
+                            .strip("<>")
+                            .replace("@mydomain.com", "")
+                        )
                     attachments.append(attachment)
         else:
             body_content = email.get_payload(decode=True).decode("utf-8")
