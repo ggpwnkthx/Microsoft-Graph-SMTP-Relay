@@ -23,8 +23,8 @@ COPY . .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Define environment variables for your application
-ENV HOSTNAME=0.0.0.0
-ENV PORT=25
+ENV SMTP_RELAY_HOSTNAME=0.0.0.0
+ENV SMTP_RELAY_PORT=25
 
 # Run the Python application
-CMD ["python", "./relay.py"]
+CMD ["python", "./server_threaded.py"]

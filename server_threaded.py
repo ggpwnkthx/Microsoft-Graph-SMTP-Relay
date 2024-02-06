@@ -1,65 +1,32 @@
 from aiosmtpd.controller import Controller
-from aiosmtpd.smtp import SMTP, Session, Envelope
+from aiosmtpd.smtp import SMTP, Session, Envelope, AuthResult
 from email.parser import Parser
 from msal import ConfidentialClientApplication, TokenCache
-import aiohttp, asyncio, base64, logging, os
+from typing import List
+import aiohttp, base64, logging, os
+
+if not os.environ.get("CLIENT_ID"):
+    from dotenv import load_dotenv
+
+    load_dotenv()
 
 
 class RelayHandler:
-    """
-    RelayHandler handles SMTP email relaying through Microsoft Graph API with support for attachments.
-
-    Methods
-    -------
-    get_token():
-        Acquires an access token for Microsoft Graph API using client credentials.
-
-    handle_DATA(server: SMTP, session: Session, envelope: Envelope):
-        Asynchronously handles incoming SMTP data, parses the email, and sends it through Microsoft Graph API.
-    """
-
-    def get_token(self):
-        """
-        Acquires an access token from Microsoft Graph API for client authentication.
-
-        Uses the MSAL (Microsoft Authentication Library) to acquire a token.
-
-        Returns
-        -------
-        str
-            The acquired access token if successful, None otherwise. Logs an error on failure.
-        """
-        result = ConfidentialClientApplication(
+    def __init__(self):
+        self.app = ConfidentialClientApplication(
             client_id=os.environ["CLIENT_ID"],
             client_credential=os.environ["CLIENT_SECRET"],
             authority=os.environ["AUTHORITY"],
             token_cache=TokenCache(),
-        ).acquire_token_for_client(scopes=[".default"])
-        if "access_token" in result:
-            return result["access_token"]
-        else:
-            logging.error(result)
-            return None
+        )
+
+    async def auth_LOGIN(self, server: SMTP, args: List[str]):
+        return AuthResult(success=True)
+
+    async def auth_PLAIN(self, server: SMTP, args: List[str]):
+        return AuthResult(success=True)
 
     async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope):
-        """
-        Asynchronously processes the received email data, extracts contents and attachments,
-        and sends the email via Microsoft Graph API.
-
-        Parameters
-        ----------
-        server : SMTP
-            The SMTP server instance.
-        session : Session
-            The SMTP session.
-        envelope : Envelope
-            The SMTP envelope, containing the email data.
-
-        Returns
-        -------
-        str
-            SMTP server response indicating the result of the email sending operation.
-        """
         email = Parser().parsestr(envelope.content.decode("utf-8"))
         attachments = []
         body_content = ""  # Default body content
@@ -84,19 +51,26 @@ class RelayHandler:
                     # Process and encode attachments
                     file_data = part.get_payload(decode=True)
                     base64_encoded = base64.b64encode(file_data).decode("utf-8")
-                    attachments.append(
-                        {
-                            "@odata.type": "#microsoft.graph.fileAttachment",
-                            "name": part.get_filename(),
-                            "contentType": part.get_content_type(),
-                            "contentBytes": base64_encoded,
-                        }
-                    )
+                    attachment = {
+                        "@odata.type": "#microsoft.graph.fileAttachment",
+                        "name": part.get_filename(),
+                        "contentType": part.get_content_type(),
+                        "contentBytes": base64_encoded,
+                    }
+                    if "inline" in content_disposition:
+                        attachment["isInline"] = True
+                        # Optionally, set a content ID or use the filename as a reference in the HTML
+                        # Note: Graph API does not directly use Content-ID like traditional email systems
+                        attachment["contentId"] = part.get('Content-ID', '').strip('<>').replace('@mydomain.com', '')
+                    attachments.append(attachment)
 
         # Construct the request payload for sending the email via Microsoft Graph API
         send = {
             "url": f"https://graph.microsoft.com/v1.0/users/{envelope.mail_from}/sendMail",
-            "headers": {"Authorization": "Bearer " + self.get_token()},
+            "headers": {
+                "Authorization": "Bearer "
+                + self.app.acquire_token_for_client(scopes=[".default"])["access_token"]
+            },
             "json": {
                 "message": {
                     "subject": email["Subject"],
@@ -120,7 +94,7 @@ class RelayHandler:
         }
 
         # Log the send request for debugging
-        logging.warning(send)
+        logging.debug(send)
 
         # Send the email through Microsoft Graph API
         async with aiohttp.ClientSession() as session:
@@ -131,17 +105,35 @@ class RelayHandler:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    match os.environ.get("LOG_LEVEL", "INFO"):
+        case "DEBUG":
+            logging.basicConfig(level=logging.DEBUG)
+        case "INFO":
+            logging.basicConfig(level=logging.INFO)
+        case "WARNING":
+            logging.basicConfig(level=logging.WARNING)
+        case _:
+            logging.basicConfig(level=logging.ERROR)
+
     handler = RelayHandler()
-    cont = Controller(
+    hostname = os.environ.get("SMTP_RELAY_HOSTNAME", "0.0.0.0")
+    port = int(os.environ.get("SMTP_RELAY_PORT", "25"))
+    controller = Controller(
         handler,
-        hostname=os.environ.get("HOSTNAME", "0.0.0.0"),
-        port=int(os.environ.get("PORT", "25")),
+        hostname=hostname,
+        port=port,
+        require_starttls=False,
+        auth_require_tls=False,
+        auth_required=False,
     )
-    cont.start()  # Start the SMTP controller
+    controller.start()
+    logging.info("Started SMTP service on {}:{}".format(hostname, port))
+
+    # To keep the main thread alive, you can join the SMTP server thread
+    # or implement your own stopping condition.
     try:
-        asyncio.get_event_loop().run_forever()
+        while True:
+            pass
     except KeyboardInterrupt:
-        print("User abort indicated")
-    finally:
-        cont.stop()  # Stop the SMTP controller on exit
+        print("Stopping SMTP server...")
+        controller.stop()
