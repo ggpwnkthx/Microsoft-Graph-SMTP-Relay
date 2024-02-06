@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: smtp_replay
+  namespace: default
+spec:
+  ports:
+    - name: smtp
+      port: 25 
+      targetPort: 25
+  selector:
+    app: smtp_replay
+# FQDN for service: smtp_replay.default.svc.cluster.local
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: smtp_replay
+  namespace: default
+stringData:
+  AUTHORITY: "https://login.microsoftonline.com/your-tenent-id" # UPDATE THIS
+  CLIENT_ID: "your-client-app-id" # UPDATE THIS
+  CLIENT_SECRET: "your-client-app-secret" # UPDATE THIS
+type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smtp_replay
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: smtp_replay
+  template:
+    metadata:
+      labels:
+        app: smtp_replay
+    spec:
+      containers:
+        - name: smtp_replay
+          image: ggpwnkthx/microsoft-graph-smtp-relay
+          env:
+            - name: AUTHORITY
+              valueFrom:
+                secretKeyRef:
+                  name: smtp_replay
+                  key: AUTHORITY
+            - name: CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: smtp_replay
+                  key: CLIENT_ID
+            - name: CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: smtp_replay
+                  key: CLIENT_SECRET
+            - name: SMTP_RELAY_HOSTNAME
+              value: "0.0.0.0"
+            - name: SMTP_RELAY_PORT
+              value: "25"
+---

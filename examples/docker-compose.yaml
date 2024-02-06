@@ -1,0 +1,10 @@
+version: "3"
+services:
+  smtp_relay:
+    image: ggpwnkthx/microsoft-graph-smtp-relay
+    environment:
+      AUTHORITY: "https://login.microsoftonline.com/your-tenent-id" # UPDATE THIS
+      CLIENT_ID: "your-client-app-id" # UPDATE THIS
+      CLIENT_SECRET: "your-client-app-secret" # UPDATE THIS
+      SMTP_RELAY_HOSTNAME: "0.0.0.0"
+      SMTP_RELAY_PORT: "25"
