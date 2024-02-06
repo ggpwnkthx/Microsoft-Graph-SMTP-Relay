@@ -17,9 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the current directory contents into the container at /usr/src/app
-COPY . .
+# Copy the files needed to /usr/src/app
+COPY app/ .
 # Install Python dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Define environment variables for your application
