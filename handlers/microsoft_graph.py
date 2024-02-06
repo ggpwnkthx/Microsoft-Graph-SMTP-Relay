@@ -1,14 +1,15 @@
-from aiosmtpd.smtp import SMTP, Session, Envelope, AuthResult
+from .auth_all import AllowAnyLOGIN
+from aiosmtpd.smtp import SMTP, Session, Envelope
 from email.parser import Parser
 from msal import ConfidentialClientApplication, TokenCache
 from typing import List
-import aiohttp, base64, logging, os
+import aiohttp, base64, logging, os, uuid
 
 if not os.environ.get("CLIENT_ID"):
     from dotenv import load_dotenv
     load_dotenv()
 
-class RelayHandler:
+class MicrosoftGraphHandler(AllowAnyLOGIN):
     def __init__(self):
         self.app = ConfidentialClientApplication(
             client_id=os.environ["CLIENT_ID"],
@@ -17,17 +18,15 @@ class RelayHandler:
             token_cache=TokenCache(),
         )
 
-    async def auth_LOGIN(self, server: SMTP, args: List[str]):
-        return AuthResult(success=True)
-
-    async def auth_PLAIN(self, server: SMTP, args: List[str]):
-        return AuthResult(success=True)
-
     async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope):
         email = Parser().parsestr(envelope.content.decode("utf-8"))
         attachments = []
-        body_content = ""  # Default body content
+        body_content = "" # Default body content
         content_type = "text"  # Default content type
+        
+        if os.environ.get("LOG_LEVEL", "") == "DEBUG":
+            with open(f"/usr/src/app/debug/{uuid.uuid4().hex}.html", "wb") as f:
+                f.write(envelope.content)
 
         # Process multipart emails to extract body and attachments
         if email.is_multipart():
@@ -60,6 +59,9 @@ class RelayHandler:
                         # Note: Graph API does not directly use Content-ID like traditional email systems
                         attachment["contentId"] = part.get('Content-ID', '').strip('<>').replace('@mydomain.com', '')
                     attachments.append(attachment)
+        else:
+            body_content = email.get_payload(decode=True).decode("utf-8")
+            content_type = "html" if email.get_content_type() == "text/html" else "text"
 
         # Construct the request payload for sending the email via Microsoft Graph API
         send = {

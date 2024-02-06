@@ -1,5 +1,5 @@
 from aiosmtpd.controller import Controller
-from handler import RelayHandler
+from handlers.microsoft_graph import MicrosoftGraphHandler
 import asyncio, logging, os, signal
 
 if not os.environ.get("CLIENT_ID"):
@@ -20,7 +20,7 @@ if __name__ == "__main__":
     hostname = os.environ.get("SMTP_RELAY_HOSTNAME", "0.0.0.0")
     port = int(os.environ.get("SMTP_RELAY_PORT", "25"))
     controller = Controller(
-        RelayHandler(),
+        MicrosoftGraphHandler(),
         hostname=hostname,
         port=port,
         require_starttls=False,
