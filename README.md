@@ -1,4 +1,6 @@
 # Microsoft Graph SMTP Relay
  SMTP relay for sending emails via the Microsoft Graph API
+ 
+ Microsoft has, for years, been trying to push everyone away from using SMTP with baisc authentication (username + password), which I am completely support. However, not a lot of open source projects have caught on to adding OAuth2 based authentication for sending out email. Heck, even many enterprise level products still require using basic authentication. There are some official work arounds, but all of them involve identity authentication methods that either don't work in many cases (where an IP addess may change frequently) or require disabling certain security policies that can be dangerous.
 
  This code snippet is designed to run as a standalone SMTP server that intercepts emails and forwards them to Microsoft's Graph API for delivery, allowing for detailed email composition including attachments. It leverages asynchronous operations for handling SMTP data and sending emails via HTTP requests, providing an example of integrating SMTP services with cloud APIs in Python.

@@ -1,3 +1,4 @@
 msal
 aiohttp
 aiosmtpd
+python-dotenv
