@@ -34,5 +34,5 @@ jobs:
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-        repository: yourusername/yourrepository
+        repository: ggpwnkthx/microsoft-graph-smtp-relay
         readme-filepath: ./README.md
