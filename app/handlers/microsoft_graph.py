@@ -40,6 +40,15 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
             authority=os.environ["AUTHORITY"],
             token_cache=TokenCache(),
         )
+    
+    @staticmethod
+    def parse_email_address(address):
+        if '<' in address and '>' in address:
+            name_part, email_part = address.split('<')
+            name = name_part.strip(' "')
+            email = email_part.strip('> ')
+            return {"emailAddress": {"name": name, "address": email}}
+        return {"emailAddress": {"address": address}}
 
     async def handle_DATA(
         self, server: SMTP, session: Session, envelope: Envelope
@@ -133,18 +142,9 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                 "message": {
                     "subject": email["Subject"],
                     "body": {"contentType": content_type, "content": body_content},
-                    "toRecipients": [
-                        {"emailAddress": {"address": addr}}
-                        for addr in email.get_all("To", [])
-                    ],
-                    "ccRecipients": [
-                        {"emailAddress": {"address": addr}}
-                        for addr in email.get_all("Cc", [])
-                    ],
-                    "bccRecipients": [
-                        {"emailAddress": {"address": addr}}
-                        for addr in email.get_all("Bcc", [])
-                    ],
+                    "toRecipients": [self.parse_email_address(addr) for addr in email.get_all("To", [])],
+                    "ccRecipients": [self.parse_email_address(addr) for addr in email.get_all("Cc", [])],
+                    "bccRecipients": [self.parse_email_address(addr) for addr in email.get_all("Bcc", [])],
                     "attachments": attachments,
                 },
                 "saveToSentItems": "false",
