@@ -78,22 +78,33 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                 if part.get_content_maintype() == "multipart":
                     continue  # Skip multipart container
                 content_disposition = part.get("Content-Disposition", None)
-                if (
-                    part.get_content_type() in ["text/plain", "text/html"]
-                    and not content_disposition
-                ):
+                if part.get_content_type() in ["text/plain", "text/html"]:
                     # Extract email body content
-                    body_content = part.get_payload(decode=True).decode("utf-8")
-                    content_type = (
-                        "html" if part.get_content_type() == "text/html" else "text"
-                    )
-                elif content_disposition:
+                    if (
+                        not content_disposition
+                        or content_disposition.lower() == "inline"
+                    ):
+                        body_content += part.get_payload(decode=True).decode("utf-8")
+                        content_type = (
+                            (
+                                "html"
+                                if part.get_content_type() == "text/html"
+                                else "text"
+                            )
+                            if content_type != "html"
+                            else content_type
+                        )
+                else:
                     # Process and encode attachments
                     file_data = part.get_payload(decode=True)
                     base64_encoded = base64.b64encode(file_data).decode("utf-8")
                     attachment = {
                         "@odata.type": "#microsoft.graph.fileAttachment",
-                        "name": part.get_filename(),
+                        "name": (
+                            str(uuid.uuid4())
+                            if not (name := part.get_filename())
+                            else name
+                        ),
                         "contentType": part.get_content_type(),
                         "contentBytes": base64_encoded,
                     }
