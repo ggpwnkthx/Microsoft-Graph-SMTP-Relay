@@ -21,7 +21,22 @@ This service is ideal for developers and organizations looking to integrate emai
 5. Run the container: `docker run -d --name smtp-relay microsoft-graph-smtp-relay`
 
 ## Configuration
-The `.env.sample` file contains all necessary used configuration keys.
+The `.env.sample` file contains all necessary used configuration keys with partial examples.
+
+### Azure Active Directory / Entra Registered App
+1. Create a new Registed Application.
+    - The **Application (client) ID** should be the **CLIENT_ID** environmental variable.
+    - The **Directory (tenant) ID** should be appended to `https://login.microsoftonline.com/` to be the **AUTHORITY** environmental variable.
+2. Go to the **Certificates & secrets** page and create a new secret.
+    - The **Value** for that secret should be the **CLIENT_SECRET** environmental variable.
+3. Go to the **API permissions** page.
+    - Remove all existing permissions if this registered app will only be used for the SMTP relay.
+    - Click **Add a permission**.
+    - Click **Microsoft Graph**.
+    - Click **Application permissions**.
+    - Search for **mail**.
+    - Click the checkbox next to **Mail.Send**. It should be the one that says **Send mail as any user** below it.
+    - Click **Add permission**
 
 ## Usage
 
