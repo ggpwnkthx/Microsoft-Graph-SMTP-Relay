@@ -28,4 +28,8 @@ ENV SMTP_RELAY_HOSTNAME=0.0.0.0
 ENV SMTP_RELAY_PORT=25
 
 # Run the Python application
-CMD ["python", "./server_threaded.py"]
+# Use ENTRYPOINT to ensure the script runs
+ENTRYPOINT ["python"]
+
+# Use CMD to provide default arguments to ENTRYPOINT
+CMD ["server_threaded.py"]
