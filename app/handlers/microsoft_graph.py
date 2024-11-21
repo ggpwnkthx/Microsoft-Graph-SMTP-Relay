@@ -1,3 +1,4 @@
+from email.utils import decode_rfc2231
 from .auth_all import AllowAnyLOGIN
 from aiosmtpd.smtp import SMTP, Session, Envelope
 from email.parser import Parser
@@ -110,9 +111,9 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                     attachment = {
                         "@odata.type": "#microsoft.graph.fileAttachment",
                         "name": (
-                            str(uuid.uuid4())
-                            if not (name := part.get_filename())
-                            else name
+                            decode_rfc2231(name)[2]
+                            if (name := part.get_filename())
+                            else str(uuid.uuid4())
                         ),
                         "contentType": part.get_content_type(),
                         "contentBytes": base64_encoded,

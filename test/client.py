@@ -49,7 +49,7 @@ html = """\
 msg.attach(MIMEText(html, "html"))
 
 # Open the image file to be embedded and attach it to the email
-with open("image.jpg", "rb") as img:
+with open("test/image.jpg", "rb") as img:
     mime_image = MIMEImage(img.read())
     mime_image.add_header("Content-ID", "<image1>")
     # Inline content disposition allows the image to be displayed within the email body
