@@ -1,16 +1,34 @@
-from email.utils import decode_rfc2231
 from .auth_all import AllowAnyLOGIN
 from aiosmtpd.smtp import SMTP, Session, Envelope
+from email.header import decode_header, make_header
+from email.message import Message
 from email.parser import Parser
+from email.utils import collapse_rfc2231_value
 from msal import ConfidentialClientApplication, TokenCache
-from typing import List
-import aiohttp, base64, logging, os, uuid
+import aiohttp
+import base64
+import logging
+import os
+import uuid
 
 # Ensure environment variables are loaded, for example, from a .env file
 if not os.environ.get("CLIENT_ID"):
     from dotenv import load_dotenv
 
     load_dotenv()
+
+
+def get_attachment_filename(part: Message):
+    # Try to get the filename from the Content-Disposition header
+    filename = part.get_filename(part.get_param('name'))
+    if filename:
+        # Decode RFC 2231 and RFC 2047 encodings
+        filename = collapse_rfc2231_value(filename)
+        filename = str(make_header(decode_header(filename)))
+        return filename
+
+    # If all else fails, return a UUID
+    return str(uuid.uuid4())
 
 
 class MicrosoftGraphHandler(AllowAnyLOGIN):
@@ -41,7 +59,7 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
             authority=os.environ["AUTHORITY"],
             token_cache=TokenCache(),
         )
-    
+
     @staticmethod
     def parse_email_address(address):
         if '<' in address and '>' in address:
@@ -94,7 +112,8 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                         not content_disposition
                         or content_disposition.lower() == "inline"
                     ):
-                        body_content += part.get_payload(decode=True).decode("utf-8")
+                        body_content += part.get_payload(
+                            decode=True).decode("utf-8")
                         content_type = (
                             (
                                 "html"
@@ -107,14 +126,11 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                 else:
                     # Process and encode attachments
                     file_data = part.get_payload(decode=True)
-                    base64_encoded = base64.b64encode(file_data).decode("utf-8")
+                    base64_encoded = base64.b64encode(
+                        file_data).decode("utf-8")
                     attachment = {
                         "@odata.type": "#microsoft.graph.fileAttachment",
-                        "name": (
-                            decode_rfc2231(name)[2]
-                            if (name := part.get_filename())
-                            else str(uuid.uuid4())
-                        ),
+                        "name": get_attachment_filename(part),
                         "contentType": part.get_content_type(),
                         "contentBytes": base64_encoded,
                     }
