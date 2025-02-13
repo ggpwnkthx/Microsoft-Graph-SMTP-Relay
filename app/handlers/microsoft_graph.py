@@ -3,7 +3,7 @@ from aiosmtpd.smtp import SMTP, Session, Envelope
 from email.header import decode_header, make_header
 from email.message import Message
 from email.parser import Parser
-from email.utils import collapse_rfc2231_value
+from email.utils import collapse_rfc2231_value, getaddresses
 from msal import ConfidentialClientApplication, TokenCache
 import aiohttp
 import base64
@@ -61,12 +61,35 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
         )
 
     @staticmethod
-    def parse_email_address(address):
-        if '<' in address and '>' in address:
-            name_part, email_part = address.split('<')
-            name = name_part.strip(' "')
-            email = email_part.strip('> ')
-            return {"emailAddress": {"name": name, "address": email}}
+    def parse_email_address(address: str) -> dict:
+        """
+        Parse an email address string according to RFC specifications.
+
+        Parameters
+        ----------
+        address : str
+            A string containing an email address, possibly including a display name.
+
+        Returns
+        -------
+        dict
+            A dictionary with the structure:
+            {
+                "emailAddress": {
+                    "name": <display name>,  # Included only if available
+                    "address": <email address>
+                }
+            }
+        """
+        # getaddresses returns a list of (name, address) tuples; here we only expect one address.
+        parsed = getaddresses([address])
+        if parsed:
+            name, email = parsed[0]
+            result = {"emailAddress": {"address": email}}
+            if name:
+                result["emailAddress"]["name"] = name
+            return result
+        # Fallback: return the address as provided if parsing fails.
         return {"emailAddress": {"address": address}}
 
     async def handle_DATA(
@@ -97,7 +120,8 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
 
         # Debugging: Save the email content to a file if LOG_LEVEL is set to DEBUG
         if os.environ.get("LOG_LEVEL", "") == "DEBUG":
-            with open(f"/usr/src/app/debug/{uuid.uuid4().hex}.html", "wb") as f:
+            os.makedirs("./debug", exist_ok=True)
+            with open(f"./debug/{uuid.uuid4().hex}.html", "wb") as f:
                 f.write(envelope.content)
 
         # Process email content and attachments
@@ -164,7 +188,7 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                     "bccRecipients": [self.parse_email_address(addr) for addr in email.get_all("Bcc", [])],
                     "attachments": attachments,
                 },
-                "saveToSentItems": "false",
+                "saveToSentItems": os.environ.get("SAVE_TO_SENT", "true"),
             },
         }
 
