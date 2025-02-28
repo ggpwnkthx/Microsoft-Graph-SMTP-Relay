@@ -20,7 +20,7 @@ if not os.environ.get("CLIENT_ID"):
 
 def get_attachment_filename(part: Message):
     # Try to get the filename from the Content-Disposition header
-    filename = part.get_filename(part.get_param('name'))
+    filename = part.get_filename(part.get_param("name"))
     if filename:
         # Decode RFC 2231 and RFC 2047 encodings
         filename = collapse_rfc2231_value(filename)
@@ -126,6 +126,8 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
 
         # Process email content and attachments
         if email.is_multipart():
+            html_body = ""
+            text_body = ""
             for part in email.walk():
                 if part.get_content_maintype() == "multipart":
                     continue  # Skip multipart container
@@ -136,22 +138,15 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                         not content_disposition
                         or content_disposition.lower() == "inline"
                     ):
-                        body_content += part.get_payload(
-                            decode=True).decode("utf-8")
-                        content_type = (
-                            (
-                                "html"
-                                if part.get_content_type() == "text/html"
-                                else "text"
-                            )
-                            if content_type != "html"
-                            else content_type
-                        )
+                        payload = part.get_payload(decode=True).decode("utf-8")
+                        if part.get_content_type() == "text/html":
+                            html_body += payload
+                        else:
+                            text_body += payload
                 else:
                     # Process and encode attachments
                     file_data = part.get_payload(decode=True)
-                    base64_encoded = base64.b64encode(
-                        file_data).decode("utf-8")
+                    base64_encoded = base64.b64encode(file_data).decode("utf-8")
                     attachment = {
                         "@odata.type": "#microsoft.graph.fileAttachment",
                         "name": get_attachment_filename(part),
@@ -168,6 +163,13 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                             .replace("@mydomain.com", "")
                         )
                     attachments.append(attachment)
+            # Use HTML body if available, otherwise fallback to plain text
+            if html_body:
+                body_content = html_body
+                content_type = "html"
+            else:
+                body_content = text_body
+                content_type = "text"
         else:
             body_content = email.get_payload(decode=True).decode("utf-8")
             content_type = "html" if email.get_content_type() == "text/html" else "text"
@@ -183,9 +185,18 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                 "message": {
                     "subject": email["Subject"],
                     "body": {"contentType": content_type, "content": body_content},
-                    "toRecipients": [self.parse_email_address(addr) for addr in email.get_all("To", [])],
-                    "ccRecipients": [self.parse_email_address(addr) for addr in email.get_all("Cc", [])],
-                    "bccRecipients": [self.parse_email_address(addr) for addr in email.get_all("Bcc", [])],
+                    "toRecipients": [
+                        self.parse_email_address(addr)
+                        for addr in email.get_all("To", [])
+                    ],
+                    "ccRecipients": [
+                        self.parse_email_address(addr)
+                        for addr in email.get_all("Cc", [])
+                    ],
+                    "bccRecipients": [
+                        self.parse_email_address(addr)
+                        for addr in email.get_all("Bcc", [])
+                    ],
                     "attachments": attachments,
                 },
                 "saveToSentItems": os.environ.get("SAVE_TO_SENT", "true"),

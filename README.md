@@ -1,6 +1,9 @@
 # Microsoft Graph SMTP Relay
 SMTP relay for sending emails via the Microsoft Graph API
 
+## Note
+This is not a proxy. Email data is parsed and converted into JSON so it can be sent using the Microsoft Graph API. Not all email RFC standards are supported, but efforts have been made in this project to generalize them.
+
 ## Introduction
 Microsoft has, for years, been trying to push everyone away from using SMTP with baisc authentication (username + password), which I completely support. However, not a lot of the open source projects I use have caught on to adding OAuth2 based authentication for sending out email. Heck, even many enterprise level products still require using basic authentication. There are some official work arounds, but all of them involve identity authentication methods that either don't work in many cases (where an IP addess may change frequently) or require disabling certain security policies that can be dangerous.
 
