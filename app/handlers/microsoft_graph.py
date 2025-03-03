@@ -1,3 +1,4 @@
+import orjson
 from .auth_all import AllowAnyLOGIN
 from aiosmtpd.smtp import SMTP, Session, Envelope
 from email.header import decode_header, make_header
@@ -7,7 +8,6 @@ from email.utils import collapse_rfc2231_value, getaddresses
 from msal import ConfidentialClientApplication, TokenCache
 import aiohttp
 import base64
-import logging
 import os
 import uuid
 
@@ -84,13 +84,22 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
         # getaddresses returns a list of (name, address) tuples; here we only expect one address.
         parsed = getaddresses([address])
         if parsed:
-            name, email = parsed[0]
-            result = {"emailAddress": {"address": email}}
-            if name:
-                result["emailAddress"]["name"] = name
-            return result
+            addresses = [
+                {
+                    "emailAddress": {
+                        "address": p[1],
+                        "name": p[0]
+                    }
+                }
+                for p in parsed
+            ]
+            for a in addresses:
+                if not a["emailAddress"]["name"]:
+                    del a["emailAddress"]["name"]
+            return addresses
+
         # Fallback: return the address as provided if parsing fails.
-        return {"emailAddress": {"address": address}}
+        return [{"emailAddress": {"address": address}}]
 
     async def handle_DATA(
         self, server: SMTP, session: Session, envelope: Envelope
@@ -119,9 +128,10 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
         content_type = "text"  # Default content type initialization
 
         # Debugging: Save the email content to a file if LOG_LEVEL is set to DEBUG
+        debug_hex = uuid.uuid4().hex
         if os.environ.get("LOG_LEVEL", "") == "DEBUG":
             os.makedirs("./debug", exist_ok=True)
-            with open(f"./debug/{uuid.uuid4().hex}.html", "wb") as f:
+            with open(f"./debug/{debug_hex}.email", "wb") as f:
                 f.write(envelope.content)
 
         # Process email content and attachments
@@ -146,7 +156,8 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                 else:
                     # Process and encode attachments
                     file_data = part.get_payload(decode=True)
-                    base64_encoded = base64.b64encode(file_data).decode("utf-8")
+                    base64_encoded = base64.b64encode(
+                        file_data).decode("utf-8")
                     attachment = {
                         "@odata.type": "#microsoft.graph.fileAttachment",
                         "name": get_attachment_filename(part),
@@ -175,6 +186,25 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
             content_type = "html" if email.get_content_type() == "text/html" else "text"
 
         # Construct the request payload for sending the email via Microsoft Graph API
+        to = [
+            parsed
+            for addr in email.get_all("To", [])
+            for parsed in self.parse_email_address(addr)
+        ]
+        cc = [
+            parsed
+            for addr in email.get_all("Cc", [])
+            for parsed in self.parse_email_address(addr)
+        ]
+        bcc = [
+            parsed
+            for addr in envelope.rcpt_tos
+            if addr not in [
+                a["emailAddress"]["address"]
+                for a in to+cc
+            ]
+            for parsed in self.parse_email_address(addr)
+        ]
         send = {
             "url": f"https://graph.microsoft.com/v1.0/users/{envelope.mail_from}/sendMail",
             "headers": {
@@ -185,18 +215,9 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                 "message": {
                     "subject": email["Subject"],
                     "body": {"contentType": content_type, "content": body_content},
-                    "toRecipients": [
-                        self.parse_email_address(addr)
-                        for addr in email.get_all("To", [])
-                    ],
-                    "ccRecipients": [
-                        self.parse_email_address(addr)
-                        for addr in email.get_all("Cc", [])
-                    ],
-                    "bccRecipients": [
-                        self.parse_email_address(addr)
-                        for addr in email.get_all("Bcc", [])
-                    ],
+                    "toRecipients": to,
+                    "ccRecipients": cc,
+                    "bccRecipients": bcc,
                     "attachments": attachments,
                 },
                 "saveToSentItems": os.environ.get("SAVE_TO_SENT", "true"),
@@ -204,7 +225,11 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
         }
 
         # Log the send request for debugging
-        logging.debug(send)
+        # logging.debug(send)
+        if os.environ.get("LOG_LEVEL", "") == "DEBUG":
+            os.makedirs("./debug", exist_ok=True)
+            with open(f"./debug/{debug_hex}.json", "wb") as f:
+                f.write(orjson.dumps(send))
 
         # Send the email through Microsoft Graph API
         async with aiohttp.ClientSession() as session:

@@ -1,4 +1,5 @@
-msal
 aiohttp
 aiosmtpd
+msal
+orjson
 python-dotenv
