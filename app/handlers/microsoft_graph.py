@@ -14,20 +14,15 @@ import uuid
 # Ensure environment variables are loaded, for example, from a .env file
 if not os.environ.get("CLIENT_ID"):
     from dotenv import load_dotenv
-
     load_dotenv()
 
 
 def get_attachment_filename(part: Message):
-    # Try to get the filename from the Content-Disposition header
     filename = part.get_filename(part.get_param("name"))
     if filename:
-        # Decode RFC 2231 and RFC 2047 encodings
         filename = collapse_rfc2231_value(filename)
         filename = str(make_header(decode_header(filename)))
         return filename
-
-    # If all else fails, return a UUID
     return str(uuid.uuid4())
 
 
@@ -61,49 +56,91 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
         )
 
     @staticmethod
-    def parse_email_address(address: str) -> dict:
+    def _extract_email_address(address: str) -> list:
         """
-        Parse an email address string according to RFC specifications.
+        Parse an email address string and return a list of dictionaries.
+        """
+        parsed = getaddresses([address])
+        addresses = []
+        for name, addr in parsed:
+            entry = {"emailAddress": {"address": addr}}
+            if name:
+                entry["emailAddress"]["name"] = name
+            addresses.append(entry)
+        return addresses if addresses else [{"emailAddress": {"address": address}}]
 
-        Parameters
-        ----------
-        address : str
-            A string containing an email address, possibly including a display name.
+    @staticmethod
+    def _extract_body_and_attachments(email_message: Message, debug_hex: str):
+        """
+        Extracts the email body (text or HTML) and attachments.
 
         Returns
         -------
-        dict
-            A dictionary with the structure:
-            {
-                "emailAddress": {
-                    "name": <display name>,  # Included only if available
-                    "address": <email address>
-                }
-            }
+            body_content (str): The email body.
+            content_type (str): "html" if HTML body exists, otherwise "text".
+            attachments (list): A list of attachment dictionaries.
         """
-        # getaddresses returns a list of (name, address) tuples; here we only expect one address.
-        parsed = getaddresses([address])
-        if parsed:
-            addresses = [
-                {
-                    "emailAddress": {
-                        "address": p[1],
-                        "name": p[0]
-                    }
-                }
-                for p in parsed
-            ]
-            for a in addresses:
-                if not a["emailAddress"]["name"]:
-                    del a["emailAddress"]["name"]
-            return addresses
 
-        # Fallback: return the address as provided if parsing fails.
-        return [{"emailAddress": {"address": address}}]
+        attachments = []
+        body_content = ""
+        content_type = "text"
 
-    async def handle_DATA(
-        self, server: SMTP, session: Session, envelope: Envelope
-    ) -> str:
+        if email_message.is_multipart():
+            html_body = ""
+            text_body = ""
+            for part in email_message.walk():
+                if part.get_content_maintype() == "multipart":
+                    continue
+
+                content_disposition = part.get("Content-Disposition", "") or ""
+                part_content_type = part.get_content_type()
+
+                if part_content_type in ["text/plain", "text/html"] and (
+                    not content_disposition or "inline" in content_disposition.lower()
+                ):
+                    try:
+                        payload = part.get_payload(decode=True).decode(
+                            "utf-8", errors="replace")
+                    except Exception:
+                        payload = ""
+                    if part_content_type == "text/html":
+                        html_body += payload
+                    else:
+                        text_body += payload
+                else:
+                    file_data = part.get_payload(decode=True)
+                    if file_data:
+                        base64_encoded = base64.b64encode(
+                            file_data).decode("utf-8")
+                        attachment = {
+                            "@odata.type": "#microsoft.graph.fileAttachment",
+                            "name": get_attachment_filename(part),
+                            "contentType": part_content_type,
+                            "contentBytes": base64_encoded,
+                        }
+                        if "inline" in content_disposition.lower():
+                            attachment["isInline"] = True
+                            content_id = part.get("Content-ID", "").strip("<>")
+                            if content_id:
+                                attachment["contentId"] = content_id.replace(
+                                    "@mydomain.com", "")
+                        attachments.append(attachment)
+            if html_body:
+                body_content = html_body
+                content_type = "html"
+            else:
+                body_content = text_body
+        else:
+            try:
+                body_content = email_message.get_payload(
+                    decode=True).decode("utf-8", errors="replace")
+            except Exception:
+                body_content = ""
+            content_type = "html" if email_message.get_content_type() == "text/html" else "text"
+
+        return body_content, content_type, attachments
+
+    async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope) -> str:
         """
         Handles the SMTP DATA command, parses email content and attachments,
         and sends the email through Microsoft Graph API.
@@ -122,118 +159,82 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
         str
             A response string indicating the result of the operation, typically "250 Message accepted for delivery" upon success.
         """
-        email = Parser().parsestr(envelope.content.decode("utf-8"))
-        attachments = []
-        body_content = ""  # Default body content initialization
-        content_type = "text"  # Default content type initialization
 
-        # Debugging: Save the email content to a file if LOG_LEVEL is set to DEBUG
+        # Decode the email safely
+        try:
+            email_content = envelope.content.decode("utf-8", errors="replace")
+            email_message = Parser().parsestr(email_content)
+        except Exception as e:
+            return f"550 Error parsing email content: {e}"
+
         debug_hex = uuid.uuid4().hex
-        if os.environ.get("LOG_LEVEL", "") == "DEBUG":
+        if os.environ.get("LOG_LEVEL", "").upper() == "DEBUG":
             os.makedirs("./debug", exist_ok=True)
             with open(f"./debug/{debug_hex}.email", "wb") as f:
                 f.write(envelope.content)
 
-        # Process email content and attachments
-        if email.is_multipart():
-            html_body = ""
-            text_body = ""
-            for part in email.walk():
-                if part.get_content_maintype() == "multipart":
-                    continue  # Skip multipart container
-                content_disposition = part.get("Content-Disposition", None)
-                if part.get_content_type() in ["text/plain", "text/html"]:
-                    # Extract email body content
-                    if (
-                        not content_disposition
-                        or content_disposition.lower() == "inline"
-                    ):
-                        payload = part.get_payload(decode=True).decode("utf-8")
-                        if part.get_content_type() == "text/html":
-                            html_body += payload
-                        else:
-                            text_body += payload
-                else:
-                    # Process and encode attachments
-                    file_data = part.get_payload(decode=True)
-                    base64_encoded = base64.b64encode(
-                        file_data).decode("utf-8")
-                    attachment = {
-                        "@odata.type": "#microsoft.graph.fileAttachment",
-                        "name": get_attachment_filename(part),
-                        "contentType": part.get_content_type(),
-                        "contentBytes": base64_encoded,
-                    }
-                    if "inline" in content_disposition:
-                        attachment["isInline"] = True
-                        # Optionally, set a content ID or use the filename as a reference in the HTML
-                        # Note: Graph API does not directly use Content-ID like traditional email systems
-                        attachment["contentId"] = (
-                            part.get("Content-ID", "")
-                            .strip("<>")
-                            .replace("@mydomain.com", "")
-                        )
-                    attachments.append(attachment)
-            # Use HTML body if available, otherwise fallback to plain text
-            if html_body:
-                body_content = html_body
-                content_type = "html"
-            else:
-                body_content = text_body
-                content_type = "text"
-        else:
-            body_content = email.get_payload(decode=True).decode("utf-8")
-            content_type = "html" if email.get_content_type() == "text/html" else "text"
+        # Extract body and attachments using helper method
+        body_content, content_type, attachments = MicrosoftGraphHandler._extract_body_and_attachments(
+            email_message, debug_hex)
 
-        # Construct the request payload for sending the email via Microsoft Graph API
-        to = [
-            parsed
-            for addr in email.get_all("To", [])
-            for parsed in self.parse_email_address(addr)
-        ]
-        cc = [
-            parsed
-            for addr in email.get_all("Cc", [])
-            for parsed in self.parse_email_address(addr)
-        ]
-        bcc = [
-            parsed
-            for addr in envelope.rcpt_tos
-            if addr not in [
-                a["emailAddress"]["address"]
-                for a in to+cc
-            ]
-            for parsed in self.parse_email_address(addr)
-        ]
-        send = {
+        # Build recipients from headers
+        to_recipients = []
+        cc_recipients = []
+        for header, recipient_list in (("To", to_recipients), ("Cc", cc_recipients)):
+            for addr in email_message.get_all(header, []):
+                for part in addr.split(","):
+                    part = part.strip()
+                    if part:
+                        recipient_list.extend(
+                            MicrosoftGraphHandler._extract_email_address(part))
+
+        # Determine bcc recipients from envelope.rcpt_tos that are not in To/Cc
+        parsed_to_cc = {r["emailAddress"]["address"]
+                        for r in to_recipients + cc_recipients}
+        bcc_recipients = []
+        for addr in envelope.rcpt_tos:
+            for part in addr.split(","):
+                part = part.strip()
+                if part and part not in parsed_to_cc:
+                    bcc_recipients.extend(
+                        MicrosoftGraphHandler._extract_email_address(part))
+
+        # Acquire an access token
+        token_response = self.app.acquire_token_for_client(scopes=[".default"])
+        access_token = token_response.get("access_token")
+        if not access_token:
+            return "550 Failed to acquire access token"
+
+        # Build the send request payload for Microsoft Graph API
+        send_payload = {
             "url": f"https://graph.microsoft.com/v1.0/users/{envelope.mail_from}/sendMail",
-            "headers": {
-                "Authorization": "Bearer "
-                + self.app.acquire_token_for_client(scopes=[".default"])["access_token"]
-            },
+            "headers": {"Authorization": f"Bearer {access_token}"},
             "json": {
                 "message": {
-                    "subject": email["Subject"],
+                    "subject": email_message["Subject"],
                     "body": {"contentType": content_type, "content": body_content},
-                    "toRecipients": to,
-                    "ccRecipients": cc,
-                    "bccRecipients": bcc,
+                    "toRecipients": to_recipients,
+                    "ccRecipients": cc_recipients,
+                    "bccRecipients": bcc_recipients,
                     "attachments": attachments,
                 },
                 "saveToSentItems": os.environ.get("SAVE_TO_SENT", "true"),
             },
         }
 
-        # Log the send request for debugging
-        # logging.debug(send)
-        if os.environ.get("LOG_LEVEL", "") == "DEBUG":
-            os.makedirs("./debug", exist_ok=True)
+        # Optionally log the payload if in DEBUG mode
+        if os.environ.get("LOG_LEVEL", "").upper() == "DEBUG":
             with open(f"./debug/{debug_hex}.json", "wb") as f:
-                f.write(orjson.dumps(send))
+                f.write(orjson.dumps(send_payload))
 
-        # Send the email through Microsoft Graph API
-        async with aiohttp.ClientSession() as session:
-            async with session.post(**send) as response:
-                if response.status != 202:
-                    return await response.text()
+        # Send the email via Microsoft Graph API
+        try:
+            async with aiohttp.ClientSession() as http_session:
+                async with http_session.post(**send_payload) as response:
+                    if response.status != 202:
+                        error_text = await response.text()
+                        return f"550 Error from Graph API: {error_text}"
+        except Exception as e:
+            return f"550 Exception sending email: {e}"
+
         return "250 Message accepted for delivery"
