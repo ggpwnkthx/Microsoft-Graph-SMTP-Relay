@@ -1,6 +1,10 @@
 from aiosmtpd.controller import Controller
 from handlers.microsoft_graph import MicrosoftGraphHandler
-import asyncio, logging, os, signal, sys
+import asyncio
+import logging
+import os
+import signal
+import sys
 
 # Load environment variables from a .env file if the CLIENT_ID is not set in the environment
 if not os.environ.get("CLIENT_ID"):
