@@ -31,7 +31,7 @@ smtp_password = "your-password"  # This should be replaced with a real password
 
 # Create a MIMEMultipart message object for an email with mixed content (HTML and image)
 msg = MIMEMultipart("related")
-msg["Subject"] = "Email with HTML and Embedded Image"
+msg["Subject"] = "Email with HTML and Embedded =?utf-8?Q?Imag=C3=A9?="
 msg["From"] = os.environ.get("TEST_FROM_ADDRESS", "me@company.com")
 msg["To"] = ", ".join(to)
 msg["Cc"] = ", ".join(cc)

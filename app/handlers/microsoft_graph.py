@@ -1,6 +1,7 @@
 import orjson
 from .auth_all import AllowAnyLOGIN
 from aiosmtpd.smtp import SMTP, Session, Envelope
+from email import policy
 from email.header import decode_header, make_header
 from email.message import Message
 from email.parser import Parser
@@ -163,7 +164,7 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
         # Decode the email safely
         try:
             email_content = envelope.content.decode("utf-8", errors="replace")
-            email_message = Parser().parsestr(email_content)
+            email_message = Parser(policy=policy.EmailPolicy()).parsestr(email_content)
         except Exception as e:
             return f"550 Error parsing email content: {e}"
 
