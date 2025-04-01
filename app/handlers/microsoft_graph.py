@@ -232,9 +232,20 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
         try:
             async with aiohttp.ClientSession() as http_session:
                 async with http_session.post(**send_payload) as response:
-                    if response.status != 202:
+                    if response.status == 429:
+                        return "421 Temporary error: Too many requests (429) from Graph API"
+                    elif response.status == 503:                        
+                        return "421 Temporary error: Service Unavailable (503) from Graph API"
+                    elif response.status == 504:                        
+                        return "421 Temporary error: Gateway Timeout (504) from Graph API"
+                    elif response.status != 202:
                         error_text = await response.text()
-                        return f"550 Error from Graph API: {error_text}"
+                        return f"550 Error from Graph API ({response.status}): {error_text}"
+
+        # Catch network errors and return a transient error 421 code
+        except aiohttp.ClientError as e:                            
+            return f"421 Network error while sending email: {e}"
+
         except Exception as e:
             return f"550 Exception sending email: {e}"
 
