@@ -17,9 +17,11 @@ if __name__ == "__main__":
 
     #Enable filesystem logging if configured with LOG_FILE_ENABLED
     if os.environ.get("LOG_FILE_ENABLED", "false").lower() == "true":
-        Path(log_file_path).parent.mkdir(parents=True, exist_ok=True)
         log_file_enabled = os.environ.get("LOG_FILE_ENABLED", "false").lower() == "true"
         log_file = os.environ.get("LOG_FILE", "/var/log/smtp/smtp_relay.log") if log_file_enabled else None
+        #create log file path if it does not exist
+        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+
 
     # Match the log level environment variable and configure logging appropriately
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
