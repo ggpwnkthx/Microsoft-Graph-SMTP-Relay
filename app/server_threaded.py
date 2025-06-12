@@ -13,16 +13,21 @@ if not os.environ.get("CLIENT_ID"):
 
 # Set up logging based on the environment variable LOG_LEVEL
 if __name__ == "__main__":
+
+    #Enable filesystem logging if configured with LOG_FILE_ENABLED
+    if os.environ.get("LOG_FILE_ENABLED", "false").lower() == "true":
+        log_file_enabled = os.environ.get("LOG_FILE_ENABLED", "false").lower() == "true"
+        log_file = os.environ.get("LOG_FILE", "/var/log/smtp/smtp_relay.log") if log_file_enabled else None
+
     # Match the log level environment variable and configure logging appropriately
-    match os.environ.get("LOG_LEVEL", "INFO"):
-        case "DEBUG":
-            logging.basicConfig(level=logging.DEBUG)
-        case "INFO":
-            logging.basicConfig(level=logging.INFO)
-        case "WARNING":
-            logging.basicConfig(level=logging.WARNING)
-        case _:
-            logging.basicConfig(level=logging.ERROR)
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+    logging.basicConfig(
+        filename=log_file if log_file_enabled else None,  # Only set file logging if enabled
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        level=getattr(logging, log_level, logging.INFO),  # Fallback to INFO if LOG_LEVEL is invalid
+        force=True  # Ensure previous settings are overridden
+    )
 
 # Get hostname and port from environment variables with defaults
 hostname = os.environ.get("SMTP_RELAY_HOSTNAME", "0.0.0.0")
