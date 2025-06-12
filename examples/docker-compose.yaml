@@ -12,6 +12,4 @@ services:
       # SMTP_RELAY_PORT: "25" # DEFAULT VALUE - NOT NEEDED
     ports:
       - "25:25" # SMTP Relay Port
-    volumes:
-      - /data/dockerdata/logs:/var/log/smtp/ # Mounting logs directory to persist logs  
     
