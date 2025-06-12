@@ -1,14 +1,17 @@
 version: "3"
 services:
   smtp_relay:
-    image: ggpwnkthx/microsoft-graph-smtp-relay
+    image: nzleadrain/microsoft-graph-smtp-relay
     environment:
       AUTHORITY: "https://login.microsoftonline.com/your-tenent-id" # REQUIRED VALUE
       CLIENT_ID: "your-client-app-id" # REQUIRED VALUE
       CLIENT_SECRET: "your-client-app-secret" # REQUIRED VALUE
-      LOG_FILE: "/var/log/smtp-relay.log" # OPTIONAL - Default is /var/log/smtp-relay.log
+      LOG_FILE: "/var/log/smtp/smtp-relay.log" # OPTIONAL - Default is /var/log/smtp-relay.log
       LOG_FILE_ENABLED: "true" # OPTIONAL - Default is true
       # SMTP_RELAY_HOSTNAME: "0.0.0.0" # DEFAULT VALUE - NOT NEEDED
       # SMTP_RELAY_PORT: "25" # DEFAULT VALUE - NOT NEEDED
     ports:
       - "25:25" # SMTP Relay Port
+    volumes:
+      - /data/dockerdata/logs:/var/log/smtp/ # Mounting logs directory to persist logs  
+    
