@@ -27,12 +27,12 @@ jobs:
         context: .
         file: ./Dockerfile  # Path to your Dockerfile
         push: true
-        tags: nzleadrain/microsoft-graph-smtp-relay  # Replace with your Docker Hub username, repository, and tag
+        tags: ggpwnkthx/microsoft-graph-smtp-relay  # Replace with your Docker Hub username, repository, and tag
 
     - name: Sync README to Docker Hub
       uses: peter-evans/dockerhub-description@v2
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-        repository: nzleadrain/microsoft-graph-smtp-relay
+        repository: ggpwnkthx/microsoft-graph-smtp-relay
         readme-filepath: ./README.md
