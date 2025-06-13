@@ -6,8 +6,8 @@ services:
       AUTHORITY: "https://login.microsoftonline.com/your-tenent-id" # REQUIRED VALUE
       CLIENT_ID: "your-client-app-id" # REQUIRED VALUE
       CLIENT_SECRET: "your-client-app-secret" # REQUIRED VALUE
-      LOG_FILE: "/var/log/smtp/smtp-relay.log" # OPTIONAL - Default is /var/log/smtp-relay.log
-      LOG_FILE_ENABLED: "true" # OPTIONAL - Default is true
+      LOG_FILE: "/var/log/smtp/smtp-relay.log" # OPTIONAL - Default is /var/log/smtp/smtp-relay.log
+      LOG_FILE_ENABLED: "true" # OPTIONAL - Default is false
       # SMTP_RELAY_HOSTNAME: "0.0.0.0" # DEFAULT VALUE - NOT NEEDED
       # SMTP_RELAY_PORT: "25" # DEFAULT VALUE - NOT NEEDED
     ports:
