@@ -1,5 +1,4 @@
 import orjson
-from .auth_all import AllowAnyLOGIN
 from aiosmtpd.smtp import SMTP, Session, Envelope
 from email import policy
 from email.header import decode_header, make_header
@@ -27,7 +26,7 @@ def get_attachment_filename(part: Message):
     return str(uuid.uuid4())
 
 
-class MicrosoftGraphHandler(AllowAnyLOGIN):
+class MicrosoftGraphHandler():
     """
     An SMTP handler class that processes emails and sends them through the Microsoft Graph API.
 
