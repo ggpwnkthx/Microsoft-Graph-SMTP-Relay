@@ -82,12 +82,11 @@ class MicrosoftGraphHandler():
         """
 
         attachments = []
-        body_content = ""
-        content_type = "text"
-
+        body = email_message.get_body(preferencelist=('html', 'plain'))
+        body_content = body.get_content()
+        content_type = "html" if body.get_content_type() == 'text/html' else "text"
+        
         if email_message.is_multipart():
-            html_body = ""
-            text_body = ""
             for part in email_message.walk():
                 if part.get_content_maintype() == "multipart":
                     continue
@@ -98,15 +97,7 @@ class MicrosoftGraphHandler():
                 if part_content_type in ["text/plain", "text/html"] and (
                     not content_disposition or "inline" in content_disposition.lower()
                 ):
-                    try:
-                        payload = part.get_payload(decode=True).decode(
-                            "utf-8", errors="replace")
-                    except Exception:
-                        payload = ""
-                    if part_content_type == "text/html":
-                        html_body += payload
-                    else:
-                        text_body += payload
+                    continue
                 else:
                     file_data = part.get_payload(decode=True)
                     if file_data:
@@ -125,18 +116,6 @@ class MicrosoftGraphHandler():
                                 attachment["contentId"] = content_id.replace(
                                     "@mydomain.com", "")
                         attachments.append(attachment)
-            if html_body:
-                body_content = html_body
-                content_type = "html"
-            else:
-                body_content = text_body
-        else:
-            try:
-                body_content = email_message.get_payload(
-                    decode=True).decode("utf-8", errors="replace")
-            except Exception:
-                body_content = ""
-            content_type = "html" if email_message.get_content_type() == "text/html" else "text"
 
         return body_content, content_type, attachments
 
