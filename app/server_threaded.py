@@ -5,7 +5,6 @@ import logging
 import os
 import signal
 import sys
-from pathlib import Path
 
 # Load environment variables from a .env file if the CLIENT_ID is not set in the environment
 if not os.environ.get("CLIENT_ID"):
@@ -14,20 +13,12 @@ if not os.environ.get("CLIENT_ID"):
 
 # Set up logging based on the environment variable LOG_LEVEL
 if __name__ == "__main__":
-
-    #Enable filesystem logging if configured with LOG_FILE_ENABLED
-    if os.environ.get("LOG_FILE_ENABLED", "false").lower() == "true":
-        log_file_enabled = os.environ.get("LOG_FILE_ENABLED", "false").lower() == "true"
-        log_file = os.environ.get("LOG_FILE", "/var/log/smtp/smtp_relay.log") if log_file_enabled else None
-        #create log file path if it does not exist
-        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
-
-
     # Match the log level environment variable and configure logging appropriately
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
 
     logging.basicConfig(
-        filename=log_file if log_file_enabled else None,  # Only set file logging if enabled
+        stream=sys.stdout,
+        #filename=log_file if log_file_enabled else None,  # Only set file logging if enabled
         format="%(asctime)s - %(levelname)s - %(message)s",
         level=getattr(logging, log_level, logging.INFO),  # Fallback to INFO if LOG_LEVEL is invalid
         force=True  # Ensure previous settings are overridden
