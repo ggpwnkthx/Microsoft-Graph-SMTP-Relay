@@ -1,5 +1,4 @@
 import orjson
-from .auth_all import AllowAnyLOGIN
 from aiosmtpd.smtp import SMTP, Session, Envelope
 from email import policy
 from email.header import decode_header, make_header
@@ -27,7 +26,7 @@ def get_attachment_filename(part: Message):
     return str(uuid.uuid4())
 
 
-class MicrosoftGraphHandler(AllowAnyLOGIN):
+class MicrosoftGraphHandler():
     """
     An SMTP handler class that processes emails and sends them through the Microsoft Graph API.
 
@@ -83,12 +82,23 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
         """
 
         attachments = []
-        body_content = ""
+        body = email_message.get_body(preferencelist=('html', 'plain'))
         content_type = "text"
-
+        if body.get_content_type() == 'text/html':
+            # get content from html body
+            body_content = body.get_content()
+            content_type = "html"
+        else:
+            # but get payload from plain text
+            pair = dict(body.items())
+            if pair.get("Content-Transfer-Encoding") == "8bit":
+                # no actual encoding
+                body_content = body.get_payload()
+            else:
+                # assume other Content-Transfer-Encoding can be handled with get_content (E.g. "quoted-printable" or "base64")
+                body_content = body.get_content()
+               
         if email_message.is_multipart():
-            html_body = ""
-            text_body = ""
             for part in email_message.walk():
                 if part.get_content_maintype() == "multipart":
                     continue
@@ -99,15 +109,7 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                 if part_content_type in ["text/plain", "text/html"] and (
                     not content_disposition or "inline" in content_disposition.lower()
                 ):
-                    try:
-                        payload = part.get_payload(decode=True).decode(
-                            "utf-8", errors="replace")
-                    except Exception:
-                        payload = ""
-                    if part_content_type == "text/html":
-                        html_body += payload
-                    else:
-                        text_body += payload
+                    continue
                 else:
                     file_data = part.get_payload(decode=True)
                     if file_data:
@@ -126,18 +128,6 @@ class MicrosoftGraphHandler(AllowAnyLOGIN):
                                 attachment["contentId"] = content_id.replace(
                                     "@mydomain.com", "")
                         attachments.append(attachment)
-            if html_body:
-                body_content = html_body
-                content_type = "html"
-            else:
-                body_content = text_body
-        else:
-            try:
-                body_content = email_message.get_payload(
-                    decode=True).decode("utf-8", errors="replace")
-            except Exception:
-                body_content = ""
-            content_type = "html" if email_message.get_content_type() == "text/html" else "text"
 
         return body_content, content_type, attachments
 
