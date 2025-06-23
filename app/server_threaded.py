@@ -1,5 +1,7 @@
 from aiosmtpd.controller import Controller
+from handlers.authenticator import Authenticator
 from handlers.microsoft_graph import MicrosoftGraphHandler
+
 import asyncio
 import logging
 import os
@@ -47,36 +49,34 @@ for var in required_env_vars:
         logging.error(f"Environment variable {var} is required.")
         sys.exit(1)
 
+smtp_user = os.environ.get("SMTP_AUTH_USER", "")
+smtp_pass = os.environ.get("SMTP_AUTH_PASS", "")
+auth_required = bool(smtp_user and smtp_user.strip()) and bool(smtp_pass and smtp_pass.strip())
+
+authenticator = Authenticator()
+
 # Initialize the SMTP server controller with Microsoft Graph handler
 controller = Controller(
     MicrosoftGraphHandler(),
     hostname=hostname,
     port=port,
+    authenticator=authenticator,
     require_starttls=False,
     auth_require_tls=False,
-    auth_required=False,
+    auth_required=auth_required,
 )
-
-# Create an asyncio Event to signal server shutdown
-stop_event = asyncio.Event()
-
-def stop():
-    """
-    Signal the event loop to stop by setting the stop event.
-    """
-    stop_event.set()
 
 loop = asyncio.new_event_loop()
 
 # Register signal handlers for graceful shutdown
 for sig in ("SIGINT", "SIGTERM"):
-    loop.add_signal_handler(getattr(signal, sig), stop)
+    loop.add_signal_handler(getattr(signal, sig), loop.stop)
 
 try:
     controller.start()
     logging.info(f"Started SMTP service on {hostname}:{port}")
     # Run the event loop until a stop signal is received
-    loop.run_until_complete(stop_event.wait())
+    loop.run_forever()
 except Exception as e:
     logging.error(f"Error occurred: {e}")
 finally:
