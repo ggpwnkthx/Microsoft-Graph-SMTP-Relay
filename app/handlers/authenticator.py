@@ -1,8 +1,11 @@
+import asyncio
 import logging
 import os
 from aiosmtpd.smtp import AuthResult, LoginPassword
 
-class Authenticator:
+from event_bus import event_bus_instance
+
+class Authenticator():       
     """
     A simple authenticator that checks for a hardcoded username and password.
     In a real application, this would interact with a database, LDAP, etc.
@@ -24,6 +27,8 @@ class Authenticator:
         """
         logging.debug(f"Authentication attempt: Mechanism={mechanism}")
 
+        event_bus_instance.publishSync('before_auth', auth_data)
+
         smtp_user = os.environ.get("SMTP_AUTH_USER", "")
         smtp_pass = os.environ.get("SMTP_AUTH_PASS", "")
 
@@ -36,6 +41,8 @@ class Authenticator:
             # Hardcoded credentials for demonstration
             if username == smtp_user and password == smtp_pass:
                 logging.info(f"Authentication successful for user: {username}")
+                event_bus_instance.publishSync('after_auth', auth_data)
+                
                 return AuthResult(success=True)
             else:
                 logging.warning(f"Authentication failed for user: {username}")
