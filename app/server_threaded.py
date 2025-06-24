@@ -1,6 +1,4 @@
-from aiosmtpd.controller import Controller
-from handlers.authenticator import Authenticator
-from handlers.microsoft_graph import MicrosoftGraphHandler
+from microsoft_graph_smtp import MicrosoftGraphSmtp
 
 import asyncio
 import logging
@@ -38,10 +36,6 @@ if __name__ == "__main__":
         config["stream"] = sys.stdout
     logging.basicConfig(**config)
 
-# Get hostname and port from environment variables with defaults
-hostname = os.environ.get("SMTP_RELAY_HOSTNAME", "0.0.0.0")
-port = int(os.environ.get("SMTP_RELAY_PORT", "25"))
-
 # Ensure required environment variables are set
 required_env_vars = ["CLIENT_ID", "CLIENT_SECRET", "AUTHORITY"]
 for var in required_env_vars:
@@ -49,23 +43,7 @@ for var in required_env_vars:
         logging.error(f"Environment variable {var} is required.")
         sys.exit(1)
 
-smtp_user = os.environ.get("SMTP_AUTH_USER", "")
-smtp_pass = os.environ.get("SMTP_AUTH_PASS", "")
-auth_required = bool(smtp_user and smtp_user.strip()) and bool(smtp_pass and smtp_pass.strip())
-
-authenticator = Authenticator()
-
-# Initialize the SMTP server controller with Microsoft Graph handler
-controller = Controller(
-    MicrosoftGraphHandler(),
-    hostname=hostname,
-    port=port,
-    authenticator=authenticator,
-    require_starttls=False,
-    auth_require_tls=False,
-    auth_required=auth_required,
-)
-
+controller = MicrosoftGraphSmtp()
 loop = asyncio.new_event_loop()
 
 # Register signal handlers for graceful shutdown
@@ -74,7 +52,7 @@ for sig in ("SIGINT", "SIGTERM"):
 
 try:
     controller.start()
-    logging.info(f"Started SMTP service on {hostname}:{port}")
+    logging.info(f"Started SMTP service on {controller.hostname}:{controller.port}")
     # Run the event loop until a stop signal is received
     loop.run_forever()
 except Exception as e:

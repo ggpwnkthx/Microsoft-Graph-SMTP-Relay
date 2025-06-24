@@ -74,6 +74,8 @@ The `.devcontainer` directory contains VS Code and Docker configuration files fo
 The `app` directory contains the source code of the service.
 Use the provided `dockerfile` for development and testing.
 
+**Implementation of middleware is supported and documented in [MIDDLEWARE.md](./MIDDLEWARE.md)**
+
 ## Testing
 The `test` directory includes a basic client script that can be used to test the relay service.
 

@@ -10,12 +10,9 @@ import aiohttp
 import base64
 import os
 import uuid
+import logging
 
-# Ensure environment variables are loaded, for example, from a .env file
-if not os.environ.get("CLIENT_ID"):
-    from dotenv import load_dotenv
-    load_dotenv()
-
+from event_bus import event_bus_instance
 
 def get_attachment_filename(part: Message):
     filename = part.get_filename(part.get_param("name"))
@@ -164,6 +161,8 @@ class MicrosoftGraphHandler():
             with open(f"./debug/{debug_hex}.email", "wb") as f:
                 f.write(envelope.content)
 
+        await event_bus_instance.publish('before_send', email_message)
+
         # Extract body and attachments using helper method
         body_content, content_type, attachments = MicrosoftGraphHandler._extract_body_and_attachments(
             email_message, debug_hex)
@@ -189,6 +188,13 @@ class MicrosoftGraphHandler():
                 if part and part not in parsed_to_cc:
                     bcc_recipients.extend(
                         MicrosoftGraphHandler._extract_email_address(part))
+
+        await event_bus_instance.publish('sender', envelope.mail_from)
+        await event_bus_instance.publish('recipients', to_recipients, cc_recipients, bcc_recipients)
+
+        if (await event_bus_instance.publish('skip_send')):
+            logging.info("Message accepted without delivery")
+            return "250 Message accepted (delivery skipped)"
 
         # Acquire an access token
         token_response = self.app.acquire_token_for_client(scopes=[".default"])
@@ -238,5 +244,7 @@ class MicrosoftGraphHandler():
 
         except Exception as e:
             return f"550 Exception sending email: {e}"
+
+        await event_bus_instance.publish('after_send')
 
         return "250 Message accepted for delivery"

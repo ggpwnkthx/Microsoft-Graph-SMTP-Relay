@@ -152,3 +152,7 @@ cython_debug/
 #.idea/
 
 debug/
+
+# Ignore app/middleware
+
+app/middleware/*.py
