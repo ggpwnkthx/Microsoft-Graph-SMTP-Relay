@@ -8,7 +8,7 @@ Also, the `MIDDLEWARE_GLOB` environments variable defines a location to load add
 
 ### Example of a middleware implementation
 
-Example middleware using the `before_sendmail` event to skip email submission
+Example middleware using the `skip_send` event to skip email submission
 
 ```python
 # app/middleware/skip_sendmail.py
@@ -18,7 +18,7 @@ from handlers.microsoft_graph import MicrosoftGraphHandler
 class Middleware:
     def __init__(self, msGraphHandler: MicrosoftGraphHandler):
         # ...
-        event_bus_instance.subscribe('skip_sendmail', self.skipSendmail)
+        event_bus_instance.subscribe('skip_send', self.skipSendmail)
 
     def skip_sendmail(self):
         # return True to skip email submission
@@ -48,7 +48,7 @@ class Middleware:
 
 Below class graph displays methods in the EventBus
 
-![Events in MicrosoftGraphHandler](./Resources/event_bus.png "Events in MicrosoftGraphHandler")
+![Events in MicrosoftGraphHandler](./Resources/event_bus.svg "Events in MicrosoftGraphHandler")
 
 Example
 
