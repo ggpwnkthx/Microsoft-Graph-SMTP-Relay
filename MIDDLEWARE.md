@@ -4,7 +4,7 @@
 ![Events in MicrosoftGraphHandler](./Resources/flow.svg "Events in MicrosoftGraphHandler")
 
 Microsoft Graph SMTP Relay supports a simple `EventBus` implementation allowing to subscribe to different event names.\
-Also, the `MIDDLEWARE_GLOB` environments variable defines a location to load additional python modules as middleware (default `app/middleware/*.py`)
+Also, the `MIDDLEWARE_DIR` environments variable defines a location to load additional python modules as middleware (default `app/middleware/*.py`)
 
 ### Example of a middleware implementation
 
