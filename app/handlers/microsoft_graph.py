@@ -1,4 +1,7 @@
-import orjson
+import asyncio
+import io
+import math
+from typing import Optional
 from aiosmtpd.smtp import SMTP, Session, Envelope
 from email import policy
 from email.header import decode_header, make_header
@@ -52,6 +55,8 @@ class MicrosoftGraphHandler():
             token_cache=TokenCache(),
         )
 
+        self.access_token = ""
+
     @staticmethod
     def _extract_email_address(address: str) -> list:
         """
@@ -67,7 +72,7 @@ class MicrosoftGraphHandler():
         return addresses if addresses else [{"emailAddress": {"address": address}}]
 
     @staticmethod
-    def _extract_body_and_attachments(email_message: Message, debug_hex: str):
+    def _extract_body_and_attachments(email_message: Message):
         """
         Extracts the email body (text or HTML) and attachments.
 
@@ -117,16 +122,192 @@ class MicrosoftGraphHandler():
                             "name": get_attachment_filename(part),
                             "contentType": part_content_type,
                             "contentBytes": base64_encoded,
+                            "isInline": False,
+                            "contentId": None
                         }
                         if "inline" in content_disposition.lower():
                             attachment["isInline"] = True
                             content_id = part.get("Content-ID", "").strip("<>")
                             if content_id:
-                                attachment["contentId"] = content_id.replace(
-                                    "@mydomain.com", "")
+                                attachment["contentId"] = content_id
+
                         attachments.append(attachment)
 
         return body_content, content_type, attachments
+
+    async def __create_token(self):
+        token_response = self.app.acquire_token_for_client(scopes=[".default"])
+        self.access_token = token_response.get("access_token")
+
+    async def __create_draft(self, email_message, envelope):
+        await event_bus_instance.publish('sender', envelope.mail_from)
+
+         # Extract body and attachments using helper method
+        body_content, content_type, attachments = MicrosoftGraphHandler._extract_body_and_attachments(email_message)
+
+        # Build recipients from headers
+        to_recipients = []
+        cc_recipients = []
+        for header, recipient_list in (("To", to_recipients), ("Cc", cc_recipients)):
+            for addr in email_message.get_all(header, []):
+                for part in addr.split(","):
+                    part = part.strip()
+                    if part:
+                        recipient_list.extend(
+                            MicrosoftGraphHandler._extract_email_address(part))
+
+        # Determine bcc recipients from envelope.rcpt_tos that are not in To/Cc
+        parsed_to_cc = {r["emailAddress"]["address"]
+                        for r in to_recipients + cc_recipients}
+        bcc_recipients = []
+        for addr in envelope.rcpt_tos:
+            for part in addr.split(","):
+                part = part.strip()
+                if part and part not in parsed_to_cc:
+                    bcc_recipients.extend(
+                        MicrosoftGraphHandler._extract_email_address(part))
+                    
+        await event_bus_instance.publish('recipients', to_recipients, cc_recipients, bcc_recipients)
+        
+        # Requires Microsoft Graph permission "Mail.ReadWrite"
+        send_payload = {
+            "url": f"https://graph.microsoft.com/v1.0/users/{envelope.mail_from}/messages",
+            "headers": {
+                "Authorization": f"Bearer {self.access_token}",
+                # use ImmutableId to delete the message later
+                "Prefer": 'IdType="ImmutableId"'
+            },
+            "json": {
+                "subject": email_message["Subject"],
+                "body": {"contentType": content_type, "content": body_content},
+                "toRecipients": to_recipients,
+                "ccRecipients": cc_recipients,
+                "bccRecipients": bcc_recipients
+            },
+        }
+
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.post(**send_payload) as response:
+                if response.status == 201:
+                    data = await response.json()
+                    logging.info(f"Draft message created with ID: {data['id']}")
+                    return data["id"], attachments
+                else:
+                    error_details = await response.json()
+                    logging.error(f"Failed to create draft message: {response.status} - {error_details}")
+                    return None, attachments
+
+
+    async def __send_draft(self, user_id: str, message_id) -> bool:
+        """
+        Sends the draft message.
+        """
+        headers = {
+            "Authorization": f"Bearer {self.access_token}"
+        }
+        url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}/send"
+
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.post(url, headers=headers) as response:
+                if response.status == 202: # Accepted
+                    logging.info("Email sent successfully with large attachment!")
+                    return True
+                else:
+                    error_details = await response.json()
+                    logging.error(f"Failed to send email: {response.status} - {error_details}")
+                    return False
+
+    async def __create_upload_session(self, user_id: str, message_id: str, file_name: str, file_size: int, is_inline: bool, content_id) -> Optional[str]:
+        """
+        Creates an upload session for a large attachment and returns the upload URL.
+        """
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json"
+        }
+        upload_session_data = {
+            "AttachmentItem": {
+                "attachmentType": "file",
+                "name": file_name,
+                "size": file_size,
+                "isInline": is_inline,
+                "contentId": content_id,
+            }
+        }
+        url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}/attachments/createUploadSession"
+
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.post(url, headers=headers, json=upload_session_data) as response:
+                if response.status in [200, 201, 202]: # Accepted
+                    data = await response.json()
+                    logging.info(f"Upload session created. Upload URL: {data['uploadUrl']}")
+                    return data['uploadUrl']
+                else:
+                    error_details = await response.json()
+                    logging.error(f"Failed to create upload session: {response.status} - {error_details}")
+                    return False
+    
+    async def __upload_attachment_in_chunks(self, upload_url: str, file_data: bytes, chunk_size: int = 327680): # 320 KiB
+        """
+        Uploads a file to the given upload URL in chunks.
+        Chunk size must be a multiple of 320 KiB (327,680 bytes).
+        """
+        file = io.BytesIO(file_data)
+
+        file_size = len(file_data)
+        num_chunks = math.ceil(file_size / chunk_size)
+        print(f"Starting upload ({file_size} bytes) in {num_chunks} chunks.")
+
+        # Using a Semaphore to limit concurrent uploads if desired, though aiohttp handles concurrency well.
+        # semaphore = asyncio.Semaphore(5) # Limit to 5 concurrent uploads if many small chunks
+        async def upload_chunk(start_byte: int, end_byte: int, chunk_data: bytes, chunk_idx: int):
+            # async with semaphore:
+                headers = {
+                    "Content-Range": f"bytes {start_byte}-{end_byte-1}/{file_size}",
+                    "Content-Length": str(len(chunk_data))
+                }
+                # Graph API requires PUT for upload sessions
+                async with aiohttp.ClientSession() as http_session:
+                    async with http_session.put(upload_url, headers=headers, data=chunk_data) as response:
+                        if response.status in [200, 201, 202]: # 200 OK, 201 Created, 202 Accepted
+                            # 200/201 if last chunk, 202 if intermediate chunk
+                            print(f"Chunk {chunk_idx+1}/{num_chunks} uploaded. Bytes {start_byte}-{end_byte-1}")
+                            return True
+                        else:
+                            error_details = await response.json()
+                            print(f"Chunk {chunk_idx+1}/{num_chunks} failed: {response.status} - {error_details}")
+                            return False
+
+        tasks = []
+        for i in range(num_chunks):
+            start_byte = i * chunk_size
+            end_byte = min((i + 1) * chunk_size, file_size)
+            chunk_data = file.read(chunk_size)
+            if not chunk_data: # Should not happen if calculations are correct
+                break
+            tasks.append(upload_chunk(start_byte, end_byte, chunk_data, i))
+        
+        results = await asyncio.gather(*tasks)
+        return all(results) # True if all chunks uploaded successfully
+    
+    async def __delete_message(self, user_id: str, message_id) -> bool:
+        """
+        Sends the draft message.
+        """
+        headers = {
+            "Authorization": f"Bearer {self.access_token}"
+        }
+        url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}"
+
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.delete(url, headers=headers) as response:
+                if response.status == 204: # Accepted
+                    logging.info("Email successfully deleted!")
+                    return True
+                else:
+                    error_details = await response.json()
+                    logging.warning(f"Failed to delete email: {response.status} - {error_details}")
+                    return False
 
     async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope) -> str:
         """
@@ -155,95 +336,26 @@ class MicrosoftGraphHandler():
         except Exception as e:
             return f"550 Error parsing email content: {e}"
 
-        debug_hex = uuid.uuid4().hex
-        if os.environ.get("LOG_LEVEL", "").upper() == "DEBUG":
-            os.makedirs("./debug", exist_ok=True)
-            with open(f"./debug/{debug_hex}.email", "wb") as f:
-                f.write(envelope.content)
-
         await event_bus_instance.publish('before_send', email_message)
 
-        # Extract body and attachments using helper method
-        body_content, content_type, attachments = MicrosoftGraphHandler._extract_body_and_attachments(
-            email_message, debug_hex)
+        await self.__create_token()
+        if not self.access_token:
+            return "550 Failed to acquire access token"
+        
+        message_id, attachments = await self.__create_draft(email_message, envelope)
 
-        # Build recipients from headers
-        to_recipients = []
-        cc_recipients = []
-        for header, recipient_list in (("To", to_recipients), ("Cc", cc_recipients)):
-            for addr in email_message.get_all(header, []):
-                for part in addr.split(","):
-                    part = part.strip()
-                    if part:
-                        recipient_list.extend(
-                            MicrosoftGraphHandler._extract_email_address(part))
-
-        # Determine bcc recipients from envelope.rcpt_tos that are not in To/Cc
-        parsed_to_cc = {r["emailAddress"]["address"]
-                        for r in to_recipients + cc_recipients}
-        bcc_recipients = []
-        for addr in envelope.rcpt_tos:
-            for part in addr.split(","):
-                part = part.strip()
-                if part and part not in parsed_to_cc:
-                    bcc_recipients.extend(
-                        MicrosoftGraphHandler._extract_email_address(part))
-
-        await event_bus_instance.publish('sender', envelope.mail_from)
-        await event_bus_instance.publish('recipients', to_recipients, cc_recipients, bcc_recipients)
+        for attachment in attachments:
+            file_data = base64.b64decode(attachment['contentBytes'])
+            upload_url = await self.__create_upload_session(envelope.mail_from, message_id, attachment['name'], len(file_data), is_inline=attachment['isInline'], content_id=attachment['contentId'])
+            await self.__upload_attachment_in_chunks(upload_url, file_data)
 
         if (await event_bus_instance.publish('skip_send')):
             logging.info("Message accepted without delivery")
             return "250 Message accepted (delivery skipped)"
 
-        # Acquire an access token
-        token_response = self.app.acquire_token_for_client(scopes=[".default"])
-        access_token = token_response.get("access_token")
-        if not access_token:
-            return "550 Failed to acquire access token"
-
-        # Build the send request payload for Microsoft Graph API
-        send_payload = {
-            "url": f"https://graph.microsoft.com/v1.0/users/{envelope.mail_from}/sendMail",
-            "headers": {"Authorization": f"Bearer {access_token}"},
-            "json": {
-                "message": {
-                    "subject": email_message["Subject"],
-                    "body": {"contentType": content_type, "content": body_content},
-                    "toRecipients": to_recipients,
-                    "ccRecipients": cc_recipients,
-                    "bccRecipients": bcc_recipients,
-                    "attachments": attachments,
-                },
-                "saveToSentItems": os.environ.get("SAVE_TO_SENT", "true"),
-            },
-        }
-
-        # Optionally log the payload if in DEBUG mode
-        if os.environ.get("LOG_LEVEL", "").upper() == "DEBUG":
-            with open(f"./debug/{debug_hex}.json", "wb") as f:
-                f.write(orjson.dumps(send_payload))
-
-        # Send the email via Microsoft Graph API
-        try:
-            async with aiohttp.ClientSession() as http_session:
-                async with http_session.post(**send_payload) as response:
-                    if response.status == 429:
-                        return "421 Temporary error: Too many requests (429) from Graph API"
-                    elif response.status == 503:                        
-                        return "421 Temporary error: Service Unavailable (503) from Graph API"
-                    elif response.status == 504:                        
-                        return "421 Temporary error: Gateway Timeout (504) from Graph API"
-                    elif response.status != 202:
-                        error_text = await response.text()
-                        return f"550 Error from Graph API ({response.status}): {error_text}"
-
-        # Catch network errors and return a transient error 421 code
-        except aiohttp.ClientError as e:                            
-            return f"421 Network error while sending email: {e}"
-
-        except Exception as e:
-            return f"550 Exception sending email: {e}"
+        await self.__send_draft(envelope.mail_from, message_id)
+        if os.environ.get("SAVE_TO_SENT", "false") == 'false':
+            await self.__delete_message(envelope.mail_from, message_id)
 
         await event_bus_instance.publish('after_send')
 
