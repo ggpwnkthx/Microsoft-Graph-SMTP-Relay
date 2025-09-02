@@ -26,8 +26,9 @@ smtp_server = (
 )
 smtp_port = int(os.environ.get("SMTP_RELAY_PORT", 25))
 # This should be replaced with a real username
-smtp_user = "your-email@example.com"
-smtp_password = "your-password"  # This should be replaced with a real password
+smtp_user = os.environ.get("SMTP_AUTH_USER", "me@company.com")
+# This should be replaced with a real password
+smtp_password = os.environ.get("SMTP_AUTH_PASS", "me@company.com")
 
 # Create a MIMEMultipart message object for an email with mixed content (HTML and image)
 msg = MIMEMultipart("related")

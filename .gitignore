@@ -153,6 +153,10 @@ cython_debug/
 
 debug/
 
+# Ignore .vscode parts
+.vscode/launch.json
+.vscode/tasks.json
+
 # Ignore app/middleware
 
 app/middleware/*.py
