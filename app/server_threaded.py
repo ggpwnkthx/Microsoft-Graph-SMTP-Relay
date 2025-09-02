@@ -44,11 +44,18 @@ for var in required_env_vars:
         sys.exit(1)
 
 controller = MicrosoftGraphSmtp()
-loop = asyncio.new_event_loop()
 
-# Register signal handlers for graceful shutdown
-for sig in ("SIGINT", "SIGTERM"):
-    loop.add_signal_handler(getattr(signal, sig), loop.stop)
+class GracefulExit(SystemExit):
+    code = 1
+
+def raise_graceful_exit(*args):
+    loop.stop()
+    print("Gracefully shutdown")
+    raise GracefulExit()
+
+loop = asyncio.get_event_loop()
+signal.signal(signal.SIGINT, raise_graceful_exit)
+signal.signal(signal.SIGTERM, raise_graceful_exit)
 
 try:
     controller.start()
