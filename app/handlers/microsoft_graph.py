@@ -240,7 +240,8 @@ class MicrosoftGraphHandler():
             async with http_session.post(url, headers=headers, json=upload_session_data) as response:
                 if response.status in [200, 201, 202]: # Accepted
                     data = await response.json()
-                    logging.info(f"Upload session created. Upload URL: {data['uploadUrl']}")
+                    logging.info(f"Upload session created for '{file_name}'.")
+                    logging.debug(f"Upload URL: {data['uploadUrl']}")
                     return data['uploadUrl']
                 else:
                     error_details = await response.json()
@@ -256,7 +257,8 @@ class MicrosoftGraphHandler():
 
         file_size = len(file_data)
         num_chunks = math.ceil(file_size / chunk_size)
-        print(f"Starting upload ({file_size} bytes) in {num_chunks} chunks.")
+
+        logging.debug(f"Start uploading {file_size} bytes into {num_chunks} chunks")
 
         # Using a Semaphore to limit concurrent uploads if desired, though aiohttp handles concurrency well.
         # semaphore = asyncio.Semaphore(5) # Limit to 5 concurrent uploads if many small chunks
@@ -271,11 +273,11 @@ class MicrosoftGraphHandler():
                     async with http_session.put(upload_url, headers=headers, data=chunk_data) as response:
                         if response.status in [200, 201, 202]: # 200 OK, 201 Created, 202 Accepted
                             # 200/201 if last chunk, 202 if intermediate chunk
-                            print(f"Chunk {chunk_idx+1}/{num_chunks} uploaded. Bytes {start_byte}-{end_byte-1}")
+                            logging.debug(f"Chunk {chunk_idx+1}/{num_chunks} uploaded (bytes {start_byte}-{end_byte-1})")
                             return True
                         else:
                             error_details = await response.json()
-                            print(f"Chunk {chunk_idx+1}/{num_chunks} failed: {response.status} - {error_details}")
+                            logging.error(f"Failed to upload chunk {chunk_idx+1}/{num_chunks}: {response.status} - {error_details}")
                             return False
 
         tasks = []
