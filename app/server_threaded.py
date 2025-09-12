@@ -1,4 +1,5 @@
 from microsoft_graph_smtp import MicrosoftGraphSmtp
+from event_bus import event_bus_instance
 
 import asyncio
 import logging
@@ -50,7 +51,7 @@ class GracefulExit(SystemExit):
 
 def raise_graceful_exit(*args):
     loop.stop()
-    print("Gracefully shutdown")
+    event_bus_instance.shutdown()
     raise GracefulExit()
 
 loop = asyncio.get_event_loop()
