@@ -38,7 +38,9 @@ The `.env.sample` file contains all necessary used configuration keys with parti
     - Click **Microsoft Graph**.
     - Click **Application permissions**.
     - Search for **mail**.
-    - Click the checkbox next to **Mail.Send**. It should be the one that says **Send mail as any user** below it.
+    - Select the following checkboxes from "Mail" register:
+        - **Mail.Send** - required for mail submission
+        - **Mail.ReadWrite** - required for mail draft with upload sessions
     - Click **Add permission**
 
 ## Usage
