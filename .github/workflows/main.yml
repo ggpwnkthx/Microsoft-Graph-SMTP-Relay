@@ -1,9 +1,8 @@
 name: Build and Push Docker Image
 
 on:
-  push:
-    branches:
-      - main  # Set to the branch name you want to trigger the build
+  release:
+    types: [published]
 
 jobs:
   build-and-push:
@@ -27,7 +26,9 @@ jobs:
         context: .
         file: ./Dockerfile  # Path to your Dockerfile
         push: true
-        tags: ggpwnkthx/microsoft-graph-smtp-relay  # Replace with your Docker Hub username, repository, and tag
+        tags: |
+          ggpwnkthx/microsoft-graph-smtp-relay:latest
+          ggpwnkthx/microsoft-graph-smtp-relay:${{ github.event.release.tag_name }}
 
     - name: Sync README to Docker Hub
       uses: peter-evans/dockerhub-description@v2
