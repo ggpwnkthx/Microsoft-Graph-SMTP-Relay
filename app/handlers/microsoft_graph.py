@@ -148,6 +148,7 @@ class MicrosoftGraphHandler():
         # Build recipients from headers
         to_recipients = []
         cc_recipients = []
+        reply_to = []
         for header, recipient_list in (("To", to_recipients), ("Cc", cc_recipients)):
             for addr in email_message.get_all(header, []):
                 for part in addr.split(","):
@@ -155,6 +156,14 @@ class MicrosoftGraphHandler():
                     if part:
                         recipient_list.extend(
                             MicrosoftGraphHandler._extract_email_address(part))
+
+        for addr in email_message.get_all("Reply-To", []):
+            for part in addr.split(","):
+                part = part.strip()
+                if part:
+                    reply_to.extend(
+                        MicrosoftGraphHandler._extract_email_address(part)
+                    )
 
         # Determine bcc recipients from envelope.rcpt_tos that are not in To/Cc
         parsed_to_cc = {r["emailAddress"]["address"]
@@ -182,7 +191,8 @@ class MicrosoftGraphHandler():
                 "body": {"contentType": content_type, "content": body_content},
                 "toRecipients": to_recipients,
                 "ccRecipients": cc_recipients,
-                "bccRecipients": bcc_recipients
+                "bccRecipients": bcc_recipients,
+                **({"replyTo": reply_to} if reply_to else {})
             },
         }
 
