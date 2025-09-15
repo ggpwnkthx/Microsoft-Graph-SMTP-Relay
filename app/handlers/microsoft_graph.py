@@ -299,10 +299,10 @@ class MicrosoftGraphHandler():
         headers = {
             "Authorization": f"Bearer {self.access_token}"
         }
-        url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}"
+        url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}/permanentDelete"
 
         async with aiohttp.ClientSession() as http_session:
-            async with http_session.delete(url, headers=headers) as response:
+            async with http_session.post(url, headers=headers) as response:
                 if response.status == 204: # Accepted
                     logging.info("Email successfully deleted!")
                     return True
