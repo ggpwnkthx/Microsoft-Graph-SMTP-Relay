@@ -290,17 +290,13 @@ class MicrosoftGraphHandler():
                             logging.error(f"Failed to upload chunk {chunk_idx+1}/{num_chunks}: {response.status} - {error_details}")
                             return False
 
-        tasks = []
         for i in range(num_chunks):
             start_byte = i * chunk_size
             end_byte = min((i + 1) * chunk_size, file_size)
             chunk_data = file.read(chunk_size)
             if not chunk_data: # Should not happen if calculations are correct
                 break
-            tasks.append(upload_chunk(start_byte, end_byte, chunk_data, i))
-        
-        results = await asyncio.gather(*tasks)
-        return all(results) # True if all chunks uploaded successfully
+            await upload_chunk(start_byte, end_byte, chunk_data, i)
     
     async def __delete_message(self, user_id: str, message_id) -> bool:
         """
