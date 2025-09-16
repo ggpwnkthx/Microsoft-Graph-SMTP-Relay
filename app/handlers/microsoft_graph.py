@@ -1,8 +1,12 @@
 import asyncio
+from hashlib import md5
+import hmac
 import io
 import math
+import secrets
+import time
 from typing import Optional
-from aiosmtpd.smtp import SMTP, Session, Envelope
+from aiosmtpd.smtp import SMTP, Session, Envelope, AuthResult
 from email import policy
 from email.header import decode_header, make_header
 from email.message import Message
@@ -316,6 +320,26 @@ class MicrosoftGraphHandler():
                     error_details = await response.json()
                     logging.warning(f"Failed to delete email: {response.status} - {error_details}")
                     return False
+
+    async def auth_CRAM__MD5(self, server: SMTP, args):
+        smtp_user = os.environ.get("SMTP_AUTH_USER", "")
+        smtp_pass = os.environ.get("SMTP_AUTH_PASS", "")
+
+        timestamp = f"<{int(time.time())}.{secrets.token_hex(4)}@{server.hostname}>"
+        challenge = timestamp.encode('utf-8')
+
+        client = await server.challenge_auth(challenge, True)
+        response = client.decode('ascii')
+
+        parts = response.split(' ')
+        username = parts[0]
+        pass_hash = parts[1]
+
+        hash_value = hmac.new(smtp_pass.encode('ascii'), challenge, md5).hexdigest()
+        
+        if username == smtp_user and pass_hash == hash_value:
+            return AuthResult(success=True)
+        return AuthResult(success=False, handled=False, message="504 Authentication failed")
 
     async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope) -> str:
         """
