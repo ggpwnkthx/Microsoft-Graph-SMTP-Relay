@@ -143,8 +143,7 @@ class MicrosoftGraphHandler():
         token_response = self.app.acquire_token_for_client(scopes=[".default"])
         self.access_token = token_response.get("access_token")
 
-    async def __create_draft(self, email_message, envelope):
-        await event_bus_instance.publish('sender', envelope.mail_from)
+    async def __create_draft(self, email_message, envelope: Envelope):
 
          # Extract body and attachments using helper method
         body_content, content_type, attachments = MicrosoftGraphHandler._extract_body_and_attachments(email_message)
@@ -179,7 +178,8 @@ class MicrosoftGraphHandler():
                 if part and part not in parsed_to_cc:
                     bcc_recipients.extend(
                         MicrosoftGraphHandler._extract_email_address(part))
-                    
+
+        await event_bus_instance.publish('sender', envelope.mail_from, reply_to)
         await event_bus_instance.publish('recipients', to_recipients, cc_recipients, bcc_recipients)
         
         # Requires Microsoft Graph permission "Mail.ReadWrite"
