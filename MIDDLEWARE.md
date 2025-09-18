@@ -44,6 +44,28 @@ class Middleware:
         mail_message.replace_header('Subject', '[ReplaceSubject middleware] ' + subject)
 ```
 
+Another example to overwrite the `Reply-To` header
+
+```python
+from event_bus import event_bus_instance
+from handlers.microsoft_graph import MicrosoftGraphHandler
+
+class Middleware:
+    """
+    Middleware to overwrite the Reply-To Header
+    """
+    def __init__(self, msGraphHandler: MicrosoftGraphHandler):
+        self.app = msGraphHandler.app
+        event_bus_instance.subscribe('sender', self.overwrite_reply_to)
+
+    async def overwrite_reply_to(self, sender_mail: str | None, reply_to: list):
+        # Overwrite reply to address
+        reply_to.clear()
+        reply_to.append({"emailAddress": {"address": "some@email.tld"}})
+        
+        return True
+```
+
 ### Event subscriptions and EventBus
 
 Below class graph displays methods in the EventBus
