@@ -6,7 +6,7 @@ services:
       AUTHORITY: "https://login.microsoftonline.com/your-tenent-id" # REQUIRED VALUE
       CLIENT_ID: "your-client-app-id" # REQUIRED VALUE
       CLIENT_SECRET: "your-client-app-secret" # REQUIRED VALUE
-      # SMTP_AUTH_PASS: "demo" # NOT NEEDED
+      # SMTP_AUTH_USER: "demo" # NOT NEEDED
       # SMTP_AUTH_PASS: "demo123" # NOT NEEDED
       # SMTP_RELAY_HOSTNAME: "0.0.0.0" # DEFAULT VALUE - NOT NEEDED
       # SMTP_RELAY_PORT: "25" # DEFAULT VALUE - NOT NEEDED
