@@ -302,7 +302,7 @@ class MicrosoftGraphHandler():
                 break
             await upload_chunk(start_byte, end_byte, chunk_data, i)
     
-    async def __delete_message(self, user_id: str, message_id) -> bool:
+    async def __delete_permanent_message(self, user_id: str, message_id) -> bool:
         """
         Sends the draft message.
         """
@@ -313,6 +313,25 @@ class MicrosoftGraphHandler():
 
         async with aiohttp.ClientSession() as http_session:
             async with http_session.post(url, headers=headers) as response:
+                if response.status == 204: # Accepted
+                    logging.info("Email successfully deleted!")
+                    return True
+                else:
+                    error_details = await response.json()
+                    logging.warning(f"Failed to permanently delete email: {response.status} - {error_details}")
+                    return False
+                
+    async def __delete_message(self, user_id: str, message_id) -> bool:
+        """
+        Sends the draft message.
+        """
+        headers = {
+            "Authorization": f"Bearer {self.access_token}"
+        }
+        url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}"
+
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.delete(url, headers=headers) as response:
                 if response.status == 204: # Accepted
                     logging.info("Email successfully deleted!")
                     return True
@@ -387,7 +406,10 @@ class MicrosoftGraphHandler():
 
         await self.__send_draft(envelope.mail_from, message_id)
         if os.environ.get("SAVE_TO_SENT", "false") == 'false':
-            await self.__delete_message(envelope.mail_from, message_id)
+            if os.environ.get("SOFT_DELETE", "false") == 'true':
+                await self.__delete_message(envelope.mail_from, message_id)
+            else:
+                await self.__delete_permanent_message(envelope.mail_from, message_id)
 
         await event_bus_instance.publish('after_send')
 

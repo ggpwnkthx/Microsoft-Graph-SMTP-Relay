@@ -23,6 +23,10 @@ if __name__ == "__main__":
         #create log file path if it does not exist
         Path(log_file).parent.mkdir(parents=True, exist_ok=True)
 
+    # Set aiosmtpd specific log level if provided
+    aiosmtpd_log_level = os.environ.get("AIOSMTPD_LOG_LEVEL", "").upper()
+    if aiosmtpd_log_level:
+        logging.getLogger('mail.log').setLevel(getattr(logging, aiosmtpd_log_level, logging.INFO))
 
     # Match the log level environment variable and configure logging appropriately
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
