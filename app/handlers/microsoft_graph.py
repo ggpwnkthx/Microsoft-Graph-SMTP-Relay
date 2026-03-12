@@ -196,9 +196,9 @@ class MicrosoftGraphHandler():
                 "toRecipients": to_recipients,
                 "ccRecipients": cc_recipients,
                 "bccRecipients": bcc_recipients,
-                "replyTo": [{"emailAddress": {"address": "Patching@hueck-folien.at", "name": "Patching"}}]
+                "from": {"emailAddress": {"address": "Patching@hueck-folien.at", "name": "Patching"}}
+                **({"replyTo": reply_to} if reply_to else {})
             },
-        #**({"replyTo": reply_to} if reply_to else {})
         }
 
         async with aiohttp.ClientSession() as http_session:
