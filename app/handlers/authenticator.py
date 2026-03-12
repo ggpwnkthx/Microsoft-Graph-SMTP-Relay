@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from aiosmtpd.smtp import AuthResult, LoginPassword
+from aiosmtpd.handlers import Message
 
 from event_bus import event_bus_instance
 
@@ -31,6 +32,12 @@ class Authenticator():
 
         smtp_user = os.environ.get("SMTP_AUTH_USER", "")
         smtp_pass = os.environ.get("SMTP_AUTH_PASS", "")
+
+        allowed_ips = {ip.strip() for ip in os.getenv("ALLOWED_IPS", "").split(",") if ip.strip()}
+        client_ip, _ = session.peer
+
+        if client_ip not in allowed_ips:
+            return AuthResult(success=False, handled=False, message="521 IP is not allowed")
 
         if isinstance(auth_data, LoginPassword):
             username = auth_data.login.decode('utf-8')
