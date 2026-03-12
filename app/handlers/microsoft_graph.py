@@ -196,7 +196,7 @@ class MicrosoftGraphHandler():
                 "toRecipients": to_recipients,
                 "ccRecipients": cc_recipients,
                 "bccRecipients": bcc_recipients,
-                "from": {"emailAddress": {"address": "Patching@hueck-folien.at", "name": "Patching"}},
+                "sender": {"emailAddress": {"address": "Patching@hueck-folien.at", "name": "Patching"}},
                 **({"replyTo": reply_to} if reply_to else {})
             },
         }
@@ -380,6 +380,11 @@ class MicrosoftGraphHandler():
         str
             A response string indicating the result of the operation, typically "250 Message accepted for delivery" upon success.
         """
+
+        allowed_ips = {ip.strip() for ip in os.getenv("ALLOWED_IPS", "").split(",") if ip.strip()}
+        client_ip, _ = session.peer
+        if client_ip not in allowed_ips:
+            return AuthResult(success=False, handled=False, message="521 IP is not allowed")
 
         # Decode the email safely
         try:
