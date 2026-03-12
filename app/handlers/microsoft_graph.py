@@ -196,7 +196,7 @@ class MicrosoftGraphHandler():
                 "toRecipients": to_recipients,
                 "ccRecipients": cc_recipients,
                 "bccRecipients": bcc_recipients,
-                "from": {"emailAddress": {"address": "Patching@hueck-folien.at", "name": "Patching"}}
+                "from": {"emailAddress": {"address": "Patching@hueck-folien.at", "name": "Patching"}},
                 **({"replyTo": reply_to} if reply_to else {})
             },
         }
