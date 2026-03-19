@@ -195,8 +195,7 @@ class MicrosoftGraphHandler():
                 "body": {"contentType": content_type, "content": body_content},
                 "toRecipients": to_recipients,
                 "ccRecipients": cc_recipients,
-                "bccRecipients": bcc_recipients,
-                "from": {"emailAddress": {"address": "Patching@hueck-folien.at", "name": "Patching"}},
+                "bccRecipients": bcc_recipients
                 **({"replyTo": reply_to} if reply_to else {})
             },
         }
