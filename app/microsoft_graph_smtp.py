@@ -10,6 +10,9 @@ from aiosmtpd.controller import Controller
 from handlers.authenticator import Authenticator
 from handlers.microsoft_graph import MicrosoftGraphHandler
 
+class MicrosoftGraphSmtpSMTP(SMTP):
+    line_length_limit = 10000  # or even 65536 for testing
+
 class MicrosoftGraphSmtp(Controller):
     def __init__(self):
         self.middleware_dir = os.environ.get("MIDDLEWARE_DIR", "app/middleware")
@@ -30,7 +33,8 @@ class MicrosoftGraphSmtp(Controller):
                          authenticator=authenticator,
                          require_starttls=False,
                          auth_require_tls=False,
-                         auth_required=auth_required)
+                         auth_required=auth_required,
+                         smtp_class=MicrosoftGraphSmtpSMTP)
         
         self.load_middleware()
         
