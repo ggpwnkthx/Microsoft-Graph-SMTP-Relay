@@ -6,6 +6,7 @@ from pathlib import Path
 import pkgutil
 import sys
 from aiosmtpd.controller import Controller
+from aiosmtpd.smtp import SMTP
 
 from handlers.authenticator import Authenticator
 from handlers.microsoft_graph import MicrosoftGraphHandler
