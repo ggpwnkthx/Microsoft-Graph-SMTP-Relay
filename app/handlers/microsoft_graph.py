@@ -90,19 +90,22 @@ class MicrosoftGraphHandler():
         attachments = []
         body = email_message.get_body(preferencelist=('html', 'plain'))
         content_type = "text"
-        if body.get_content_type() == 'text/html':
-            # get content from html body
-            body_content = body.get_content()
-            content_type = "html"
-        else:
-            # but get payload from plain text
-            pair = dict(body.items())
-            if pair.get("Content-Transfer-Encoding") == "8bit":
-                # no actual encoding
-                body_content = body.get_payload()
-            else:
-                # assume other Content-Transfer-Encoding can be handled with get_content (E.g. "quoted-printable" or "base64")
+        if body is not None:
+            if body.get_content_type() == 'text/html':
+                # get content from html body
                 body_content = body.get_content()
+                content_type = "html"
+            else:
+                # but get payload from plain text
+                pair = dict(body.items())
+                if pair.get("Content-Transfer-Encoding") == "8bit":
+                    # no actual encoding
+                    body_content = body.get_payload()
+                else:
+                    # assume other Content-Transfer-Encoding can be handled with get_content (E.g. "quoted-printable" or "base64")
+                    body_content = body.get_content()
+        else:
+            body_content = "\n"
                
         if email_message.is_multipart():
             for part in email_message.walk():
@@ -136,6 +139,9 @@ class MicrosoftGraphHandler():
                                 attachment["contentId"] = content_id
 
                         attachments.append(attachment)
+
+        if not body_content:
+            body_content = "\n"
 
         return body_content, content_type, attachments
 
