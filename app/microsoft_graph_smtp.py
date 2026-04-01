@@ -34,11 +34,13 @@ class MicrosoftGraphSmtp(Controller):
                          authenticator=authenticator,
                          require_starttls=False,
                          auth_require_tls=False,
-                         auth_required=auth_required,
-                         smtp_class=MicrosoftGraphSmtpSMTP)
+                         auth_required=auth_required)
         
         self.load_middleware()
-        
+
+    def factory(self):
+        return MicrosoftGraphSmtpSMTP(self.handler, **self.SMTP_kwargs)
+
     def load_middleware(self):
         pkg_dir = Path(self.middleware_dir) # instead of glob
         pkg_name = ".".join(pkg_dir.parts)
