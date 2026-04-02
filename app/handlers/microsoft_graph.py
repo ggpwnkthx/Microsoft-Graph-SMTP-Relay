@@ -135,8 +135,7 @@ class MicrosoftGraphHandler():
                             "isInline": False,
                             "contentId": None
                         }
-                        if "inline" in content_disposition.lower() or
-                        content_location:
+                        if "inline" in content_disposition.lower() or content_location:
                             attachment["isInline"] = True
                             content_id = part.get("Content-ID", "").strip("<>")
                             if content_id:
