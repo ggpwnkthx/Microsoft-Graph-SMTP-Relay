@@ -18,6 +18,7 @@ import base64
 import os
 import uuid
 import logging
+import ipaddress
 
 from event_bus import event_bus_instance
 
@@ -48,7 +49,7 @@ class MicrosoftGraphHandler():
         Processes the incoming SMTP data and sends the email via Microsoft Graph API.
     """
 
-    def __init__(self):
+    def __init__(self, allowed_networks=None, *args, **kwargs):
         """
         Initializes the handler with a Confidential Client Application for Microsoft authentication.
         """
@@ -58,7 +59,8 @@ class MicrosoftGraphHandler():
             authority=os.environ["AUTHORITY"],
             token_cache=TokenCache(),
         )
-
+        
+        self.allowed_networks = allowed_networks or set()
         self.access_token = ""
 
     @staticmethod
@@ -369,6 +371,16 @@ class MicrosoftGraphHandler():
             return AuthResult(success=True)
         return AuthResult(success=False, handled=False, message="504 Authentication failed")
 
+    async def handle_HELO(self, server, session, envelope, hostname):
+        client_ip_str, _ = session.peer
+        client_ip = ipaddress.ip_address(client_ip_str)
+
+        # Check if client IP is allowed
+        if self.allowed_networks and not any(client_ip in net for net in self.allowed_networks):
+            return "521 IP is not allowed"
+
+        return await super().handle_HELO(server, session, envelope, hostname)
+
     async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope) -> str:
         """
         Handles the SMTP DATA command, parses email content and attachments,
@@ -388,11 +400,6 @@ class MicrosoftGraphHandler():
         str
             A response string indicating the result of the operation, typically "250 Message accepted for delivery" upon success.
         """
-
-        allowed_ips = {ip.strip() for ip in os.getenv("ALLOWED_IPS", "").split(",") if ip.strip()}
-        client_ip, _ = session.peer
-        if allowed_ips and client_ip not in allowed_ips:
-            return "521 IP is not allowed"
 
         # Decode the email safely
         try:

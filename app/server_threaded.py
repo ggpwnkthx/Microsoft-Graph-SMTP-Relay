@@ -60,7 +60,6 @@ def raise_graceful_exit(*args):
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
-#loop = asyncio.get_event_loop()
 
 signal.signal(signal.SIGINT, raise_graceful_exit)
 signal.signal(signal.SIGTERM, raise_graceful_exit)

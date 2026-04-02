@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import pkgutil
 import sys
+import ipaddress
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import SMTP
 
@@ -12,12 +13,31 @@ from handlers.authenticator import Authenticator
 from handlers.microsoft_graph import MicrosoftGraphHandler
 
 class MicrosoftGraphSmtpSMTP(SMTP):
-    line_length_limit = 10000  # or even 65536 for testing
+    value = os.environ.get("AIOSMTPD_LINE_LENGTH_LIMIT", 1000)
+    try:
+        line_length_limit = int(value)
+    except ValueError:
+        line_length_limit = 1000
+    line_length_limit = max(1000, min(line_length_limit, 65535))
 
 class MicrosoftGraphSmtp(Controller):
     def __init__(self):
+        
+        # Parse and validate allowed ips
+        allowed_ips = os.getenv("ALLOWED_IPS", "")
+        allowed_networks = set()
+        for item in allowed_ips.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            try:
+                network = ipaddress.ip_network(item, strict=False)
+                allowed_networks.add(network)
+            except ValueError:
+                pass
+
         self.middleware_dir = os.environ.get("MIDDLEWARE_DIR", "app/middleware")
-        self.msGraphHandler = MicrosoftGraphHandler()
+        self.msGraphHandler = MicrosoftGraphHandler(allowed_networks=allowed_networks)
 
         hostname = os.environ.get("SMTP_RELAY_HOSTNAME", "0.0.0.0")
         port = int(os.environ.get("SMTP_RELAY_PORT", "25"))
@@ -25,6 +45,8 @@ class MicrosoftGraphSmtp(Controller):
         smtp_user = os.environ.get("SMTP_AUTH_USER", "")
         smtp_pass = os.environ.get("SMTP_AUTH_PASS", "")
         auth_required = bool(smtp_user and smtp_user.strip()) and bool(smtp_pass and smtp_pass.strip())
+
+
 
         authenticator = Authenticator()
 
