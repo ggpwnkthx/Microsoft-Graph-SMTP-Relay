@@ -440,6 +440,8 @@ class MicrosoftGraphHandler():
         else:
             logging.info(f"Client {client_ip} allowed connect.")
 
+        allow_send_incomplete = os.environ.get("ALLOW_SEND_INCOMPLETE", "false").lower() == "true"
+
         # Decode the email safely
         try:
             email_content = envelope.content.decode("utf-8", errors="replace")
@@ -477,8 +479,14 @@ class MicrosoftGraphHandler():
                 if not attachment_uploaded:
                     logging.warning(f"Failed to upload attachment for {attachment['name']}. Attaching placeholder notification.")
                     failure_attached = await self.__attach_upload_failure_placeholder(envelope.mail_from, message_id, attachment['name'], "Upload session created, but attachment upload failed.")
-            if ( not upload_url or not attachment_uploaded ) and not failure_attached:
-                logging.error(f"Failed to attach placeholder notification. Sending mail without attachment.")
+            if not upload_url or not attachment_uploaded:
+                if not failure_attached:
+                    logging.error(f"Failed to attach placeholder notification.")    
+                if allow_send_incomplete:
+                    logging.warn(f"Proceeding to send incomplete mail.")
+                else:
+                    logging.error(f"Aborting due to incomplete mail.")
+                    return "550 Unable to process attachments"
 
         if (await event_bus_instance.publish('skip_send')):
             logging.info("Message accepted without delivery")
