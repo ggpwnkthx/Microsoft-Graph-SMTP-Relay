@@ -7,6 +7,7 @@ import secrets
 import time
 from typing import Optional
 from aiosmtpd.smtp import SMTP, Session, Envelope, AuthResult
+from aiosmtpd.handlers import Handler
 from email import policy
 from email.header import decode_header, make_header
 from email.message import Message
@@ -31,7 +32,7 @@ def get_attachment_filename(part: Message):
     return str(uuid.uuid4())
 
 
-class MicrosoftGraphHandler():
+class MicrosoftGraphHandler(Handler):
     """
     An SMTP handler class that processes emails and sends them through the Microsoft Graph API.
 

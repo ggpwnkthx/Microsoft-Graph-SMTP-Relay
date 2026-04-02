@@ -47,8 +47,6 @@ class MicrosoftGraphSmtp(Controller):
         smtp_pass = os.environ.get("SMTP_AUTH_PASS", "")
         auth_required = bool(smtp_user and smtp_user.strip()) and bool(smtp_pass and smtp_pass.strip())
 
-
-
         authenticator = Authenticator()
 
         super().__init__(self.msGraphHandler,
