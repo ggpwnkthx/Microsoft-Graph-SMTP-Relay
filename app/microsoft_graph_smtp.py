@@ -19,6 +19,7 @@ class MicrosoftGraphSmtpSMTP(SMTP):
     except ValueError:
         line_length_limit = 1000
     line_length_limit = max(1000, min(line_length_limit, 65535))
+    logging.debug(f"SMTP DATA line length limit set to {line_length_limit}")
 
 class MicrosoftGraphSmtp(Controller):
     def __init__(self):
