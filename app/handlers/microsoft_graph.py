@@ -19,6 +19,7 @@ import os
 import uuid
 import logging
 import ipaddress
+from datetime import datetime, timezone
 
 from event_bus import event_bus_instance
 
@@ -313,6 +314,45 @@ class MicrosoftGraphHandler():
                 break
             await upload_chunk(start_byte, end_byte, chunk_data, i)
     
+    async def __attach_upload_failure_placeholder(self, user_id: str, message_id, original_filename, reason):
+        placeholder_name = f"ATTACHMENT_UPLOAD_FAILED_{original_filename}.txt"
+
+        content = (
+            f"Attachment upload failed\n\n"
+            f"Original filename: {original_filename}\n"
+            f"Reason: {reason}\n"
+            f"Time (UTC): {datetime.now(timezone.utc).isoformat()}\n\n"
+            f"The original attachment could not be added to this email due to a temporary "
+            f"Microsoft Graph / Exchange Online issue.\n"
+            f"Please retrieve the original file from the source system or retry sending.\n"
+        )
+
+        attachment_payload = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": placeholder_name,
+            "contentType": "text/plain",
+            "contentBytes": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+            "isInline": False
+        }
+
+        # POST /users/{mailbox}/messages/{message_id}/attachments
+        return await self.__add_attachment_to_draft(user_id, message_id, attachment_payload)
+
+    async def __add_attachment_to_draft(self, user_id: str, message_id, attachment_payload):
+        headers = {
+            "Authorization": f"Bearer {self.access_token}"
+        }
+        url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}/attachments"
+
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.post(url, headers=headers, json=attachment_payload) as response:
+                if response.status in (200, 201):
+                    return True
+                else:
+                    error_details = await response.json()
+                    logging.warning(f"Failed to add attachment to email: {response.status} - {error_details}")
+                    return False
+
     async def __delete_permanent_message(self, user_id: str, message_id) -> bool:
         """
         Sends the draft message.
@@ -418,20 +458,27 @@ class MicrosoftGraphHandler():
         for attachment in attachments:
             file_data = base64.b64decode(attachment['contentBytes'])
 
-            max_retries = 5
+            max_retries = -1
             upload_url = None
             for attempt in range(max_retries):
                 upload_url = await self.__create_upload_session(envelope.mail_from, message_id, attachment['name'], len(file_data), is_inline=attachment['isInline'], content_id=attachment['contentId'])
                 if upload_url:
-                    break  # success
+                    break # success
                 else:
                     # small backoff to wait for draft to propagate
                     await asyncio.sleep(0.5 * (attempt + 1))
+            
             if not upload_url:
                 # still failed after retries
-                logging.error(f"Failed to create upload session for {attachment['name']}. Sending mail without attachment.")
+                logging.warning(f"Failed to create upload session for {attachment['name']}. Attaching placeholder notification.")
+                failure_attached = await self.__attach_upload_failure_placeholder(envelope.mail_from, message_id, attachment['name'], "Upload session created, but attachment upload failed.")
             else:
-                await self.__upload_attachment_in_chunks(upload_url, file_data)
+                attachment_uploaded = await self.__upload_attachment_in_chunks(upload_url, file_data)
+                if not attachment_uploaded:
+                    logging.warning(f"Failed to upload attachment for {attachment['name']}. Attaching placeholder notification.")
+                    failure_attached = await self.__attach_upload_failure_placeholder(envelope.mail_from, message_id, attachment['name'], "Upload session created, but attachment upload failed.")
+            if ( not upload_url or not attachment_uploaded ) and not failure_attached:
+                logging.error(f"Failed to attach placeholder notification. Sending mail without attachment.")
 
         if (await event_bus_instance.publish('skip_send')):
             logging.info("Message accepted without delivery")
