@@ -113,10 +113,13 @@ class MicrosoftGraphHandler():
                     continue
 
                 content_disposition = part.get("Content-Disposition", "") or ""
+                content_location = part.get("Content-Location", "") or ""
                 part_content_type = part.get_content_type()
 
                 if part_content_type in ["text/plain", "text/html"] and (
                     not content_disposition or "inline" in content_disposition.lower()
+                ) and (
+                    not content_location
                 ):
                     continue
                 else:
@@ -132,7 +135,8 @@ class MicrosoftGraphHandler():
                             "isInline": False,
                             "contentId": None
                         }
-                        if "inline" in content_disposition.lower():
+                        if "inline" in content_disposition.lower() or
+                        content_location:
                             attachment["isInline"] = True
                             content_id = part.get("Content-ID", "").strip("<>")
                             if content_id:
