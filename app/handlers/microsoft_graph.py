@@ -473,7 +473,7 @@ class MicrosoftGraphHandler():
             if not upload_url:
                 # still failed after retries
                 logging.warning(f"Failed to create upload session for {attachment['name']}. Attaching placeholder notification.")
-                failure_attached = await self.__attach_upload_failure_placeholder(envelope.mail_from, message_id, attachment['name'], "Upload session created, but attachment upload failed.")
+                failure_attached = await self.__attach_upload_failure_placeholder(envelope.mail_from, message_id, attachment['name'], "Unable to create attachment upload session.")
             else:
                 attachment_uploaded = await self.__upload_attachment_in_chunks(upload_url, file_data)
                 if not attachment_uploaded:
