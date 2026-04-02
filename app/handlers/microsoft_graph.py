@@ -7,7 +7,6 @@ import secrets
 import time
 from typing import Optional
 from aiosmtpd.smtp import SMTP, Session, Envelope, AuthResult
-from aiosmtpd.handlers import Handler
 from email import policy
 from email.header import decode_header, make_header
 from email.message import Message
@@ -32,7 +31,7 @@ def get_attachment_filename(part: Message):
     return str(uuid.uuid4())
 
 
-class MicrosoftGraphHandler(Handler):
+class MicrosoftGraphHandler():
     """
     An SMTP handler class that processes emails and sends them through the Microsoft Graph API.
 
@@ -372,22 +371,6 @@ class MicrosoftGraphHandler(Handler):
             return AuthResult(success=True)
         return AuthResult(success=False, handled=False, message="504 Authentication failed")
 
-    async def handle_HELO(self, server, session, envelope, hostname):
-        client_ip_str, _ = session.peer
-        client_ip = ipaddress.ip_address(client_ip_str)
-
-        logging.info(f"Client {client_ip} connected.")
-        if session.extended_smtp:
-            logging.debug("Client sent EHLO")
-        else:
-            logging.debug("Client sent HELO")
-        
-        # Check if client IP is allowed
-        if self.allowed_networks and not any(client_ip in net for net in self.allowed_networks):
-            return "521 IP is not allowed"
-
-        return await super().handle_HELO(server, session, envelope, hostname)
-
     async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope) -> str:
         """
         Handles the SMTP DATA command, parses email content and attachments,
@@ -407,6 +390,15 @@ class MicrosoftGraphHandler(Handler):
         str
             A response string indicating the result of the operation, typically "250 Message accepted for delivery" upon success.
         """
+
+        client_ip_str, _ = session.peer
+        client_ip = ipaddress.ip_address(client_ip_str)        
+        # Check if client IP is allowed
+        if self.allowed_networks and not any(client_ip in net for net in self.allowed_networks):
+            logging.info(f"Client {client_ip} NOT allowed connect.")
+            return "521 IP is not allowed"
+        else:
+            logging.info(f"Client {client_ip} allowed connect.")
 
         # Decode the email safely
         try:
