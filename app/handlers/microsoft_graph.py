@@ -395,10 +395,10 @@ class MicrosoftGraphHandler():
         client_ip = ipaddress.ip_address(client_ip_str)        
         # Check if client IP is allowed
         if self.allowed_networks and not any(client_ip in net for net in self.allowed_networks):
-            logging.info(f"Client {client_ip} NOT allowed connect.")
+            logging.error(f"Client {client_ip} NOT allowed to connect.")
             return "521 IP is not allowed"
         else:
-            logging.info(f"Client {client_ip} allowed connect.")
+            logging.error(f"Client {client_ip} allowed connect.")
 
         # Decode the email safely
         try:
