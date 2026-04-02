@@ -408,8 +408,21 @@ class MicrosoftGraphHandler():
 
         for attachment in attachments:
             file_data = base64.b64decode(attachment['contentBytes'])
-            upload_url = await self.__create_upload_session(envelope.mail_from, message_id, attachment['name'], len(file_data), is_inline=attachment['isInline'], content_id=attachment['contentId'])
-            await self.__upload_attachment_in_chunks(upload_url, file_data)
+
+            max_retries = 5
+            upload_url = None
+            for attempt in range(max_retries):
+                upload_url = await self.__create_upload_session(envelope.mail_from, message_id, attachment['name'], len(file_data), is_inline=attachment['isInline'], content_id=attachment['contentId'])
+                if upload_url:
+                    break  # success
+                else:
+                    # small backoff to wait for draft to propagate
+                    await asyncio.sleep(0.5 * (attempt + 1))
+            if not upload_url:
+                # still failed after retries
+                logging.error(f"Failed to create upload session for {attachment['name']}. Sending mail without attachment.")
+            else:
+                await self.__upload_attachment_in_chunks(upload_url, file_data)
 
         if (await event_bus_instance.publish('skip_send')):
             logging.info("Message accepted without delivery")
