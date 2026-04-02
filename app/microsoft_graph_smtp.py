@@ -22,7 +22,7 @@ class MicrosoftGraphSmtpSMTP(SMTP):
 
 class MicrosoftGraphSmtp(Controller):
     def __init__(self):
-        
+
         # Parse and validate allowed ips
         allowed_ips = os.getenv("ALLOWED_IPS", "")
         allowed_networks = set()
@@ -35,6 +35,7 @@ class MicrosoftGraphSmtp(Controller):
                 allowed_networks.add(network)
             except ValueError:
                 pass
+        logging.debug("Allowed networks initialized: %s", allowed_networks)
 
         self.middleware_dir = os.environ.get("MIDDLEWARE_DIR", "app/middleware")
         self.msGraphHandler = MicrosoftGraphHandler(allowed_networks=allowed_networks)

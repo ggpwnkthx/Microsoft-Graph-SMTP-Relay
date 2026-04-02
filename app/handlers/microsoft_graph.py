@@ -375,6 +375,12 @@ class MicrosoftGraphHandler():
         client_ip_str, _ = session.peer
         client_ip = ipaddress.ip_address(client_ip_str)
 
+        logging.info(f"Client {client_ip} connected.")
+        if session.extended_smtp:
+            logging.debug("Client sent EHLO")
+        else:
+            logging.debug("Client sent HELO")
+        
         # Check if client IP is allowed
         if self.allowed_networks and not any(client_ip in net for net in self.allowed_networks):
             return "521 IP is not allowed"
