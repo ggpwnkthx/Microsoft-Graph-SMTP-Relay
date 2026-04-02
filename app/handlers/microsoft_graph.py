@@ -391,7 +391,7 @@ class MicrosoftGraphHandler():
 
         allowed_ips = {ip.strip() for ip in os.getenv("ALLOWED_IPS", "").split(",") if ip.strip()}
         client_ip, _ = session.peer
-        if client_ip not in allowed_ips:
+        if allowed_ips and client_ip not in allowed_ips:
             return "521 IP is not allowed"
 
         # Decode the email safely
