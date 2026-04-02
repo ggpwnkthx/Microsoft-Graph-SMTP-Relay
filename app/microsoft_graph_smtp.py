@@ -13,17 +13,20 @@ from handlers.authenticator import Authenticator
 from handlers.microsoft_graph import MicrosoftGraphHandler
 
 class MicrosoftGraphSmtpSMTP(SMTP):
-    value = os.environ.get("AIOSMTPD_LINE_LENGTH_LIMIT", 1000)
-    try:
-        line_length_limit = int(value)
-    except ValueError:
-        line_length_limit = 1000
-    line_length_limit = max(1000, min(line_length_limit, 65535))
-    logging.debug(f"SMTP DATA line length limit set to {line_length_limit}")
+    def __init__(self, *args, **kwargs):
+        # Override default line length limit if specified
+        value = os.environ.get("AIOSMTPD_LINE_LENGTH_LIMIT", 1000)
+        try:
+            line_length_limit = int(value)
+        except ValueError:
+            line_length_limit = 1000
+        self.line_length_limit = max(1000, min(line_length_limit, 65535))
+        logging.debug(f"SMTP DATA line length limit set to {self.line_length_limit}")
+
+        super().__init__(*args, **kwargs)
 
 class MicrosoftGraphSmtp(Controller):
     def __init__(self):
-
         # Parse and validate allowed ips
         allowed_ips = os.getenv("ALLOWED_IPS", "")
         allowed_networks = set()
