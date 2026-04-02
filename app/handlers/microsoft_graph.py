@@ -460,7 +460,7 @@ class MicrosoftGraphHandler():
         for attachment in attachments:
             file_data = base64.b64decode(attachment['contentBytes'])
 
-            max_retries = -1
+            max_retries = 5
             upload_url = None
             for attempt in range(max_retries):
                 upload_url = await self.__create_upload_session(envelope.mail_from, message_id, attachment['name'], len(file_data), is_inline=attachment['isInline'], content_id=attachment['contentId'])
