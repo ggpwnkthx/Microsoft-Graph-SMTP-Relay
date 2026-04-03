@@ -306,13 +306,18 @@ class MicrosoftGraphHandler():
                             logging.error(f"Failed to upload chunk {chunk_idx+1}/{num_chunks}: {response.status} - {error_details}")
                             return False
 
+        uploaded = False
+
         for i in range(num_chunks):
             start_byte = i * chunk_size
             end_byte = min((i + 1) * chunk_size, file_size)
             chunk_data = file.read(chunk_size)
             if not chunk_data: # Should not happen if calculations are correct
                 break
-            await upload_chunk(start_byte, end_byte, chunk_data, i)
+            uploaded = await upload_chunk(start_byte, end_byte, chunk_data, i)
+        
+        return uploaded
+
     
     async def __attach_upload_failure_placeholder(self, user_id: str, message_id, original_filename, reason):
         placeholder_name = f"ATTACHMENT_UPLOAD_FAILED_{original_filename}.txt"
