@@ -95,9 +95,12 @@ class MicrosoftGraphHandler():
         content_type = "text"
         if body is not None:
             if body.get_content_type() == 'text/html':
-                # get content from html body
-                body_content = body.get_content()
                 content_type = "html"
+                cte = (body.get("Content-Transfer-Encoding") or "").strip().lower()
+                if cte == "8bit":
+                    body_content = body.get_payload()
+                else:
+                    body_content = body.get_content()
             else:
                 # but get payload from plain text
                 pair = dict(body.items())
