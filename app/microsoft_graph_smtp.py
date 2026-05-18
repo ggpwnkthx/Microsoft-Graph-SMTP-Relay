@@ -59,7 +59,8 @@ class MicrosoftGraphSmtp(Controller):
                          authenticator=authenticator,
                          require_starttls=False,
                          auth_require_tls=False,
-                         auth_required=auth_required)
+                         auth_required=auth_required,
+                         auth_mechanism_allow=["LOGIN", "PLAIN", "CRAM-MD5"])
         
         self.load_middleware()
 
