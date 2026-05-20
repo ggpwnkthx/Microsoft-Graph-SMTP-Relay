@@ -62,7 +62,6 @@ class MicrosoftGraphHandler():
         )
         
         self.allowed_networks = allowed_networks or set()
-        self.access_token = ""
 
     @staticmethod
     def _extract_email_address(address: str) -> list:
@@ -151,11 +150,11 @@ class MicrosoftGraphHandler():
 
         return body_content, content_type, attachments
 
-    async def __create_token(self):
+    async def __create_token(self) -> str:
         token_response = self.app.acquire_token_for_client(scopes=[".default"])
-        self.access_token = token_response.get("access_token")
+        return token_response.get("access_token")
 
-    async def __create_draft(self, email_message, envelope: Envelope):
+    async def __create_draft(self, access_token: str, email_message, envelope: Envelope):
 
          # Extract body and attachments using helper method
         body_content, content_type, attachments = MicrosoftGraphHandler._extract_body_and_attachments(email_message)
@@ -198,7 +197,7 @@ class MicrosoftGraphHandler():
         send_payload = {
             "url": f"https://graph.microsoft.com/v1.0/users/{envelope.mail_from}/messages",
             "headers": {
-                "Authorization": f"Bearer {self.access_token}",
+                "Authorization": f"Bearer {access_token}",
                 # use ImmutableId to delete the message later
                 "Prefer": 'IdType="ImmutableId"'
             },
@@ -224,12 +223,12 @@ class MicrosoftGraphHandler():
                     return None, attachments
 
 
-    async def __send_draft(self, user_id: str, message_id) -> bool:
+    async def __send_draft(self, access_token: str, user_id: str, message_id) -> bool:
         """
         Sends the draft message.
         """
         headers = {
-            "Authorization": f"Bearer {self.access_token}"
+            "Authorization": f"Bearer {access_token}"
         }
         url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}/send"
 
@@ -243,12 +242,12 @@ class MicrosoftGraphHandler():
                     logging.error(f"Failed to send email: {response.status} - {error_details}")
                     return False
 
-    async def __create_upload_session(self, user_id: str, message_id: str, file_name: str, file_size: int, is_inline: bool, content_id) -> Optional[str]:
+    async def __create_upload_session(self, access_token: str, user_id: str, message_id: str, file_name: str, file_size: int, is_inline: bool, content_id) -> Optional[str]:
         """
         Creates an upload session for a large attachment and returns the upload URL.
         """
         headers = {
-            "Authorization": f"Bearer {self.access_token}",
+            "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
         upload_session_data = {
@@ -314,7 +313,7 @@ class MicrosoftGraphHandler():
                 break
             await upload_chunk(start_byte, end_byte, chunk_data, i)
     
-    async def __attach_upload_failure_placeholder(self, user_id: str, message_id, original_filename, reason):
+    async def __attach_upload_failure_placeholder(self, access_token: str, user_id: str, message_id, original_filename, reason):
         placeholder_name = f"ATTACHMENT_UPLOAD_FAILED_{original_filename}.txt"
 
         content = (
@@ -336,11 +335,11 @@ class MicrosoftGraphHandler():
         }
 
         # POST /users/{mailbox}/messages/{message_id}/attachments
-        return await self.__add_attachment_to_draft(user_id, message_id, attachment_payload)
+        return await self.__add_attachment_to_draft(access_token, user_id, message_id, attachment_payload)
 
-    async def __add_attachment_to_draft(self, user_id: str, message_id, attachment_payload):
+    async def __add_attachment_to_draft(self, access_token: str, user_id: str, message_id, attachment_payload):
         headers = {
-            "Authorization": f"Bearer {self.access_token}"
+            "Authorization": f"Bearer {access_token}"
         }
         url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}/attachments"
 
@@ -353,12 +352,12 @@ class MicrosoftGraphHandler():
                     logging.warning(f"Failed to add attachment to email: {response.status} - {error_details}")
                     return False
 
-    async def __delete_permanent_message(self, user_id: str, message_id) -> bool:
+    async def __delete_permanent_message(self, access_token: str, user_id: str, message_id) -> bool:
         """
         Sends the draft message.
         """
         headers = {
-            "Authorization": f"Bearer {self.access_token}"
+            "Authorization": f"Bearer {access_token}"
         }
         url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}/permanentDelete"
 
@@ -372,12 +371,12 @@ class MicrosoftGraphHandler():
                     logging.warning(f"Failed to permanently delete email: {response.status} - {error_details}")
                     return False
                 
-    async def __delete_message(self, user_id: str, message_id) -> bool:
+    async def __delete_message(self, access_token: str, user_id: str, message_id) -> bool:
         """
         Sends the draft message.
         """
         headers = {
-            "Authorization": f"Bearer {self.access_token}"
+            "Authorization": f"Bearer {access_token}"
         }
         url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}"
 
@@ -451,11 +450,11 @@ class MicrosoftGraphHandler():
 
         await event_bus_instance.publish('before_send', email_message)
 
-        await self.__create_token()
-        if not self.access_token:
+        access_token = await self.__create_token()
+        if not access_token:
             return "550 Failed to acquire access token"
         
-        message_id, attachments = await self.__create_draft(email_message, envelope)
+        message_id, attachments = await self.__create_draft(access_token, email_message, envelope)
 
         for attachment in attachments:
             file_data = base64.b64decode(attachment['contentBytes'])
@@ -463,7 +462,7 @@ class MicrosoftGraphHandler():
             max_retries = 5
             upload_url = None
             for attempt in range(max_retries):
-                upload_url = await self.__create_upload_session(envelope.mail_from, message_id, attachment['name'], len(file_data), is_inline=attachment['isInline'], content_id=attachment['contentId'])
+                upload_url = await self.__create_upload_session(access_token, envelope.mail_from, message_id, attachment['name'], len(file_data), is_inline=attachment['isInline'], content_id=attachment['contentId'])
                 if upload_url:
                     break # success
                 else:
@@ -473,12 +472,12 @@ class MicrosoftGraphHandler():
             if not upload_url:
                 # still failed after retries
                 logging.warning(f"Failed to create upload session for {attachment['name']}. Attaching placeholder notification.")
-                failure_attached = await self.__attach_upload_failure_placeholder(envelope.mail_from, message_id, attachment['name'], "Unable to create attachment upload session.")
+                failure_attached = await self.__attach_upload_failure_placeholder(access_token, envelope.mail_from, message_id, attachment['name'], "Unable to create attachment upload session.")
             else:
                 attachment_uploaded = await self.__upload_attachment_in_chunks(upload_url, file_data)
                 if not attachment_uploaded:
                     logging.warning(f"Failed to upload attachment for {attachment['name']}. Attaching placeholder notification.")
-                    failure_attached = await self.__attach_upload_failure_placeholder(envelope.mail_from, message_id, attachment['name'], "Upload session created, but attachment upload failed.")
+                    failure_attached = await self.__attach_upload_failure_placeholder(access_token, envelope.mail_from, message_id, attachment['name'], "Upload session created, but attachment upload failed.")
             if not upload_url or not attachment_uploaded:
                 if not failure_attached:
                     logging.error(f"Failed to attach placeholder notification.")    
@@ -492,12 +491,12 @@ class MicrosoftGraphHandler():
             logging.info("Message accepted without delivery")
             return "250 Message accepted (delivery skipped)"
 
-        await self.__send_draft(envelope.mail_from, message_id)
+        await self.__send_draft(access_token, envelope.mail_from, message_id)
         if os.environ.get("SAVE_TO_SENT", "false") == 'false':
             if os.environ.get("SOFT_DELETE", "false") == 'true':
-                await self.__delete_message(envelope.mail_from, message_id)
+                await self.__delete_message(access_token, envelope.mail_from, message_id)
             else:
-                await self.__delete_permanent_message(envelope.mail_from, message_id)
+                await self.__delete_permanent_message(access_token, envelope.mail_from, message_id)
 
         await event_bus_instance.publish('after_send')
 
