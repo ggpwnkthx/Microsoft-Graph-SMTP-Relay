@@ -352,6 +352,36 @@ class MicrosoftGraphHandler():
                     logging.warning(f"Failed to add attachment to email: {response.status} - {error_details}")
                     return False
 
+    async def __wait_for_send_complete(self, access_token: str, user_id: str, message_id, timeout: float = 30.0, interval: float = 1.0) -> bool:
+        """
+        Polls the message every interval (specified in seconds) until it can be confirmed that Exchange has processed it (isDraft=false or it can no longer be found).
+        Returns True if the message is confirmed sent, False on timeout (specified in seconds) or error.
+        """
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{message_id}?$select=isDraft"
+
+        elapsed = 0.0
+        while elapsed < timeout:
+            async with aiohttp.ClientSession() as http_session:
+                async with http_session.get(url, headers=headers) as response:
+                    if response.status == 404:
+                        logging.debug("Message no longer found - assuming send completed.")
+                        return True
+                    elif response.status == 200:
+                        data = await response.json()
+                        if not data.get("isDraft", True):
+                            logging.debug("Message confirmed sent (isDraft=False).")
+                            return True
+                    else:
+                        logging.debug(f"Unexpected status {response.status} while polling send state.")
+            await asyncio.sleep(interval)
+            elapsed += interval
+
+        logging.warning(f"Timed out waiting for message {message_id} to leave draft state.")
+        return False
+
     async def __delete_permanent_message(self, access_token: str, user_id: str, message_id) -> bool:
         """
         Sends the draft message.
@@ -491,7 +521,11 @@ class MicrosoftGraphHandler():
             logging.info("Message accepted without delivery")
             return "250 Message accepted (delivery skipped)"
 
-        await self.__send_draft(access_token, envelope.mail_from, message_id)
+        sent = await self.__send_draft(access_token, envelope.mail_from, message_id)
+        
+        if sent:
+            await self.__wait_for_send_complete(access_token, envelope.mail_from, message_id)
+
         if os.environ.get("SAVE_TO_SENT", "false") == 'false':
             if os.environ.get("SOFT_DELETE", "false") == 'true':
                 await self.__delete_message(access_token, envelope.mail_from, message_id)
