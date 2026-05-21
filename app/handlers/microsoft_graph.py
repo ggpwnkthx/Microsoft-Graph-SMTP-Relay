@@ -524,13 +524,16 @@ class MicrosoftGraphHandler():
         sent = await self.__send_draft(access_token, envelope.mail_from, message_id)
         
         if sent:
-            await self.__wait_for_send_complete(access_token, envelope.mail_from, message_id)
+            sent = await self.__wait_for_send_complete(access_token, envelope.mail_from, message_id)
 
         if os.environ.get("SAVE_TO_SENT", "false") == 'false':
             if os.environ.get("SOFT_DELETE", "false") == 'true':
                 await self.__delete_message(access_token, envelope.mail_from, message_id)
             else:
                 await self.__delete_permanent_message(access_token, envelope.mail_from, message_id)
+
+        if not sent:
+            return "550 Failed to send email"
 
         await event_bus_instance.publish('after_send')
 
