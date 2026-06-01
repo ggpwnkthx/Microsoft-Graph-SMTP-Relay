@@ -523,8 +523,11 @@ class MicrosoftGraphHandler():
 
         sent = await self.__send_draft(access_token, envelope.mail_from, message_id)
         
-        if sent:
-            sent = await self.__wait_for_send_complete(access_token, envelope.mail_from, message_id)
+        wait_for_send = os.environ.get("WAIT_FOR_SEND_COMPLETE", "true").lower() == "true"
+        wait_for_send_timeout = float(os.environ.get("WAIT_FOR_SEND_TIMEOUT", "30"))
+        
+        if sent and wait_for_send:
+            sent = await self.__wait_for_send_complete(access_token, envelope.mail_from, message_id, timeout=wait_for_send_timeout)
 
         if os.environ.get("SAVE_TO_SENT", "false") == 'false':
             if os.environ.get("SOFT_DELETE", "false") == 'true':
