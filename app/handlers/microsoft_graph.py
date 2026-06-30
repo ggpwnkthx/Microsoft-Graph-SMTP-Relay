@@ -163,32 +163,58 @@ class MicrosoftGraphHandler():
         to_recipients = []
         cc_recipients = []
         reply_to = []
+        #for header, recipient_list in (("To", to_recipients), ("Cc", cc_recipients)):
+        #    for addr in email_message.get_all(header, []):
+        #        for part in addr.split(","):
+        #            part = part.strip()
+        #            if part:
+        #                recipient_list.extend(
+        #                    MicrosoftGraphHandler._extract_email_address(part))
+
         for header, recipient_list in (("To", to_recipients), ("Cc", cc_recipients)):
             for addr in email_message.get_all(header, []):
-                for part in addr.split(","):
-                    part = part.strip()
-                    if part:
-                        recipient_list.extend(
-                            MicrosoftGraphHandler._extract_email_address(part))
+                if addr and addr.strip():
+                    recipient_list.extend(
+                        MicrosoftGraphHandler._extract_email_address(addr)
+                    )
+
+        #for addr in email_message.get_all("Reply-To", []):
+        #    for part in addr.split(","):
+        #        part = part.strip()
+        #        if part:
+        #            reply_to.extend(
+        #                MicrosoftGraphHandler._extract_email_address(part)
+        #            )
 
         for addr in email_message.get_all("Reply-To", []):
-            for part in addr.split(","):
-                part = part.strip()
-                if part:
-                    reply_to.extend(
-                        MicrosoftGraphHandler._extract_email_address(part)
-                    )
+            if addr and addr.strip():
+                reply_to.extend(
+                    MicrosoftGraphHandler._extract_email_address(addr)
+                )
 
         # Determine bcc recipients from envelope.rcpt_tos that are not in To/Cc
         parsed_to_cc = {r["emailAddress"]["address"]
                         for r in to_recipients + cc_recipients}
         bcc_recipients = []
+        #for addr in envelope.rcpt_tos:
+        #    for part in addr.split(","):
+        #        part = part.strip()
+        #        if part and part not in parsed_to_cc:
+        #            bcc_recipients.extend(
+        #                MicrosoftGraphHandler._extract_email_address(part))
+
+        parsed_to_cc = {
+            r["emailAddress"]["address"].strip().lower()
+            for r in to_recipients + cc_recipients
+            if r["emailAddress"].get("address")
+        }
+
         for addr in envelope.rcpt_tos:
-            for part in addr.split(","):
-                part = part.strip()
-                if part and part not in parsed_to_cc:
-                    bcc_recipients.extend(
-                        MicrosoftGraphHandler._extract_email_address(part))
+            parsed = MicrosoftGraphHandler._extract_email_address(addr)
+            for recipient in parsed:
+                email_addr = recipient["emailAddress"]["address"]
+                if email_addr and email_addr not in parsed_to_cc:
+                    bcc_recipients.append(recipient)
 
         await event_bus_instance.publish('sender', envelope.mail_from, reply_to)
         await event_bus_instance.publish('recipients', to_recipients, cc_recipients, bcc_recipients)
