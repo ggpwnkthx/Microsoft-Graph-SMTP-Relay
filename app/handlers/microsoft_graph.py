@@ -10,7 +10,7 @@ from aiosmtpd.smtp import SMTP, Session, Envelope, AuthResult
 from email import policy
 from email.header import decode_header, make_header
 from email.message import Message
-from email.parser import Parser
+from email.parser import BytesParser
 from email.utils import collapse_rfc2231_value, getaddresses
 from msal import ConfidentialClientApplication, TokenCache
 import aiohttp
@@ -94,18 +94,28 @@ class MicrosoftGraphHandler():
         content_type = "text"
         if body is not None:
             if body.get_content_type() == 'text/html':
-                # get content from html body
-                body_content = body.get_content()
                 content_type = "html"
-            else:
-                # but get payload from plain text
-                pair = dict(body.items())
-                if pair.get("Content-Transfer-Encoding") == "8bit":
-                    # no actual encoding
-                    body_content = body.get_payload()
-                else:
-                    # assume other Content-Transfer-Encoding can be handled with get_content (E.g. "quoted-printable" or "base64")
-                    body_content = body.get_content()
+            # get_content() decodes the payload using the part's own declared
+            # charset (falling back sensibly), regardless of whether the
+            # Content-Transfer-Encoding is 8bit, 7bit, quoted-printable, or
+            # base64. Do NOT use get_payload() here - with policy.default it
+            # does not apply charset-aware text decoding and can produce
+            # mojibake for legacy senders (e.g. Windows-1252/ISO-8859-1 mail
+            # sent with Content-Transfer-Encoding: 8bit).
+            try:
+                body_content = body.get_content()
+            except (LookupError, UnicodeDecodeError) as e:
+                # Declared charset is missing/invalid or bytes don't actually
+                # match it (common with legacy/misconfigured senders). Fall
+                # back to the most common legacy charset for German mail
+                # instead of corrupting every non-ASCII character.
+                logging.warning(
+                    f"Failed to decode body with declared charset "
+                    f"({body.get_content_charset()!r}): {e}. "
+                    f"Falling back to windows-1252."
+                )
+                raw = body.get_payload(decode=True) or b""
+                body_content = raw.decode("windows-1252", errors="replace")
         else:
             body_content = "\n"
                
@@ -502,10 +512,15 @@ class MicrosoftGraphHandler():
 
         allow_send_incomplete = os.environ.get("ALLOW_SEND_INCOMPLETE", "false").lower() == "true"
 
-        # Decode the email safely
+        # Parse the raw message bytes directly. Do NOT decode the whole
+        # envelope as UTF-8 up front - that ignores each MIME part's own
+        # declared charset and silently corrupts non-UTF-8 mail (e.g. legacy
+        # senders using Windows-1252/ISO-8859-1 with Content-Transfer-Encoding:
+        # 8bit), turning every non-UTF-8 byte into U+FFFD ("<27>"). Parsing at
+        # the byte level lets email.policy.default decode each part using its
+        # own charset when the body/attachments are actually read later.
         try:
-            email_content = envelope.content.decode("utf-8", errors="replace")
-            email_message = Parser(policy=policy.EmailPolicy()).parsestr(email_content)
+            email_message = BytesParser(policy=policy.default).parsebytes(envelope.content)
         except Exception as e:
             return f"550 Error parsing email content: {e}"
 
