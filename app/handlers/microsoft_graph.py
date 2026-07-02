@@ -10,7 +10,7 @@ from aiosmtpd.smtp import SMTP, Session, Envelope, AuthResult
 from email import policy
 from email.header import decode_header, make_header
 from email.message import Message
-from email.parser import Parser
+from email.parser import BytesParser
 from email.utils import collapse_rfc2231_value, getaddresses
 from msal import ConfidentialClientApplication, TokenCache
 import aiohttp
@@ -94,18 +94,28 @@ class MicrosoftGraphHandler():
         content_type = "text"
         if body is not None:
             if body.get_content_type() == 'text/html':
-                # get content from html body
-                body_content = body.get_content()
                 content_type = "html"
-            else:
-                # but get payload from plain text
-                pair = dict(body.items())
-                if pair.get("Content-Transfer-Encoding") == "8bit":
-                    # no actual encoding
-                    body_content = body.get_payload()
-                else:
-                    # assume other Content-Transfer-Encoding can be handled with get_content (E.g. "quoted-printable" or "base64")
-                    body_content = body.get_content()
+            # get_content() decodes the payload using the part's own declared
+            # charset (falling back sensibly), regardless of whether the
+            # Content-Transfer-Encoding is 8bit, 7bit, quoted-printable, or
+            # base64. Do NOT use get_payload() here - with policy.default it
+            # does not apply charset-aware text decoding and can produce
+            # mojibake for legacy senders (e.g. Windows-1252/ISO-8859-1 mail
+            # sent with Content-Transfer-Encoding: 8bit).
+            try:
+                body_content = body.get_content()
+            except (LookupError, UnicodeDecodeError) as e:
+                # Declared charset is missing/invalid or bytes don't actually
+                # match it (common with legacy/misconfigured senders). Fall
+                # back to the most common legacy charset for German mail
+                # instead of corrupting every non-ASCII character.
+                logging.warning(
+                    f"Failed to decode body with declared charset "
+                    f"({body.get_content_charset()!r}): {e}. "
+                    f"Falling back to windows-1252."
+                )
+                raw = body.get_payload(decode=True) or b""
+                body_content = raw.decode("windows-1252", errors="replace")
         else:
             body_content = "\n"
                
@@ -163,32 +173,58 @@ class MicrosoftGraphHandler():
         to_recipients = []
         cc_recipients = []
         reply_to = []
+        #for header, recipient_list in (("To", to_recipients), ("Cc", cc_recipients)):
+        #    for addr in email_message.get_all(header, []):
+        #        for part in addr.split(","):
+        #            part = part.strip()
+        #            if part:
+        #                recipient_list.extend(
+        #                    MicrosoftGraphHandler._extract_email_address(part))
+
         for header, recipient_list in (("To", to_recipients), ("Cc", cc_recipients)):
             for addr in email_message.get_all(header, []):
-                for part in addr.split(","):
-                    part = part.strip()
-                    if part:
-                        recipient_list.extend(
-                            MicrosoftGraphHandler._extract_email_address(part))
+                if addr and addr.strip():
+                    recipient_list.extend(
+                        MicrosoftGraphHandler._extract_email_address(addr)
+                    )
+
+        #for addr in email_message.get_all("Reply-To", []):
+        #    for part in addr.split(","):
+        #        part = part.strip()
+        #        if part:
+        #            reply_to.extend(
+        #                MicrosoftGraphHandler._extract_email_address(part)
+        #            )
 
         for addr in email_message.get_all("Reply-To", []):
-            for part in addr.split(","):
-                part = part.strip()
-                if part:
-                    reply_to.extend(
-                        MicrosoftGraphHandler._extract_email_address(part)
-                    )
+            if addr and addr.strip():
+                reply_to.extend(
+                    MicrosoftGraphHandler._extract_email_address(addr)
+                )
 
         # Determine bcc recipients from envelope.rcpt_tos that are not in To/Cc
         parsed_to_cc = {r["emailAddress"]["address"]
                         for r in to_recipients + cc_recipients}
         bcc_recipients = []
+        #for addr in envelope.rcpt_tos:
+        #    for part in addr.split(","):
+        #        part = part.strip()
+        #        if part and part not in parsed_to_cc:
+        #            bcc_recipients.extend(
+        #                MicrosoftGraphHandler._extract_email_address(part))
+
+        parsed_to_cc = {
+            r["emailAddress"]["address"].strip().lower()
+            for r in to_recipients + cc_recipients
+            if r["emailAddress"].get("address")
+        }
+
         for addr in envelope.rcpt_tos:
-            for part in addr.split(","):
-                part = part.strip()
-                if part and part not in parsed_to_cc:
-                    bcc_recipients.extend(
-                        MicrosoftGraphHandler._extract_email_address(part))
+            parsed = MicrosoftGraphHandler._extract_email_address(addr)
+            for recipient in parsed:
+                email_addr = recipient["emailAddress"]["address"]
+                if email_addr and email_addr not in parsed_to_cc:
+                    bcc_recipients.append(recipient)
 
         await event_bus_instance.publish('sender', envelope.mail_from, reply_to)
         await event_bus_instance.publish('recipients', to_recipients, cc_recipients, bcc_recipients)
@@ -305,13 +341,18 @@ class MicrosoftGraphHandler():
                             logging.error(f"Failed to upload chunk {chunk_idx+1}/{num_chunks}: {response.status} - {error_details}")
                             return False
 
+        uploaded = False
+
         for i in range(num_chunks):
             start_byte = i * chunk_size
             end_byte = min((i + 1) * chunk_size, file_size)
             chunk_data = file.read(chunk_size)
             if not chunk_data: # Should not happen if calculations are correct
                 break
-            await upload_chunk(start_byte, end_byte, chunk_data, i)
+            uploaded = await upload_chunk(start_byte, end_byte, chunk_data, i)
+        
+        return uploaded
+
     
     async def __attach_upload_failure_placeholder(self, access_token: str, user_id: str, message_id, original_filename, reason):
         placeholder_name = f"ATTACHMENT_UPLOAD_FAILED_{original_filename}.txt"
@@ -471,10 +512,15 @@ class MicrosoftGraphHandler():
 
         allow_send_incomplete = os.environ.get("ALLOW_SEND_INCOMPLETE", "false").lower() == "true"
 
-        # Decode the email safely
+        # Parse the raw message bytes directly. Do NOT decode the whole
+        # envelope as UTF-8 up front - that ignores each MIME part's own
+        # declared charset and silently corrupts non-UTF-8 mail (e.g. legacy
+        # senders using Windows-1252/ISO-8859-1 with Content-Transfer-Encoding:
+        # 8bit), turning every non-UTF-8 byte into U+FFFD ("<27>"). Parsing at
+        # the byte level lets email.policy.default decode each part using its
+        # own charset when the body/attachments are actually read later.
         try:
-            email_content = envelope.content.decode("utf-8", errors="replace")
-            email_message = Parser(policy=policy.EmailPolicy()).parsestr(email_content)
+            email_message = BytesParser(policy=policy.default).parsebytes(envelope.content)
         except Exception as e:
             return f"550 Error parsing email content: {e}"
 
