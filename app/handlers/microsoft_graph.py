@@ -243,7 +243,7 @@ class MicrosoftGraphHandler():
                 "toRecipients": to_recipients,
                 "ccRecipients": cc_recipients,
                 "bccRecipients": bcc_recipients,
-                **({"replyTo": reply_to} if reply_to else {})
+                **({("replyTo"): reply_to} if reply_to else {})
             },
         }
 
@@ -535,30 +535,40 @@ class MicrosoftGraphHandler():
         for attachment in attachments:
             file_data = base64.b64decode(attachment['contentBytes'])
 
-            max_retries = 5
-            upload_url = None
-            for attempt in range(max_retries):
-                upload_url = await self.__create_upload_session(access_token, envelope.mail_from, message_id, attachment['name'], len(file_data), is_inline=attachment['isInline'], content_id=attachment['contentId'])
-                if upload_url:
-                    break # success
-                else:
-                    # small backoff to wait for draft to propagate
-                    await asyncio.sleep(0.5 * (attempt + 1))
-            
-            if not upload_url:
-                # still failed after retries
-                logging.warning(f"Failed to create upload session for {attachment['name']}. Attaching placeholder notification.")
-                failure_attached = await self.__attach_upload_failure_placeholder(access_token, envelope.mail_from, message_id, attachment['name'], "Unable to create attachment upload session.")
-            else:
+            max_attempts = 3
+            attachment_uploaded = False
+            for attempt in range(max_attempts):
+                if attempt > 0:
+                    backoff = 1.0 * attempt
+                    logging.info(f"Retrying attachment upload for '{attachment['name']}' (attempt {attempt + 1}/{max_attempts}) after {backoff}s backoff.")
+                    await asyncio.sleep(backoff)
+
+                upload_url = await self.__create_upload_session(
+                    access_token, envelope.mail_from, message_id,
+                    attachment['name'], len(file_data),
+                    is_inline=attachment['isInline'],
+                    content_id=attachment['contentId']
+                )
+                if not upload_url:
+                    logging.warning(f"Failed to create upload session for '{attachment['name']}' on attempt {attempt + 1}/{max_attempts}.")
+                    continue
+
                 attachment_uploaded = await self.__upload_attachment_in_chunks(upload_url, file_data)
-                if not attachment_uploaded:
-                    logging.warning(f"Failed to upload attachment for {attachment['name']}. Attaching placeholder notification.")
-                    failure_attached = await self.__attach_upload_failure_placeholder(access_token, envelope.mail_from, message_id, attachment['name'], "Upload session created, but attachment upload failed.")
-            if not upload_url or not attachment_uploaded:
+                if attachment_uploaded:
+                    break
+                logging.warning(f"Failed to upload chunks for '{attachment['name']}' on attempt {attempt + 1}/{max_attempts}.")
+
+            if not attachment_uploaded:
+                logging.warning(f"All {max_attempts} upload attempts failed for '{attachment['name']}'. Attaching placeholder notification.")
+                failure_attached = await self.__attach_upload_failure_placeholder(
+                    access_token, envelope.mail_from, message_id,
+                    attachment['name'],
+                    "Upload session created but chunk upload failed after all retry attempts."
+                )
                 if not failure_attached:
-                    logging.error(f"Failed to attach placeholder notification.")    
+                    logging.error(f"Failed to attach placeholder notification for '{attachment['name']}'")
                 if allow_send_incomplete:
-                    logging.warn(f"Proceeding to send incomplete mail.")
+                    logging.warning(f"Proceeding to send incomplete mail.")
                 else:
                     logging.error(f"Aborting due to incomplete mail.")
                     return "550 Unable to process attachments"
